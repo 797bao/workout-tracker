@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 31.12 31.12">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #b6a4d0;
+        stroke: #b6a4d0;
+        stroke-miterlimit: 10;
+        stroke-width: 3px;
+      }
+    </style>
+  </defs>
+  <g id="Calisthinetics_Cross">
+    <polyline class="cls-1" points="1.06 1.06 15.56 15.56 30.06 30.06"/>
+    <polyline class="cls-1" points="30.06 1.06 15.56 15.56 1.06 30.06"/>
+  </g>
+</svg>

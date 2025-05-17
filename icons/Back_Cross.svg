@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Chest_Cross" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34.59 34.59">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+        stroke: #eb999b;
+        stroke-miterlimit: 10;
+        stroke-width: 3px;
+      }
+    </style>
+  </defs>
+  <g id="Back_Cross" data-name="Back Cross">
+    <line class="cls-1" x1="0" y1="17.3" x2="34.59" y2="17.3"/>
+    <line class="cls-1" x1="17.3" y1="34.59" x2="17.3" y2="0"/>
+  </g>
+</svg>

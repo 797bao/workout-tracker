@@ -1,0 +1,422 @@
+/* WorkoutChart.css */
+
+html, body {
+  touch-action: manipulation; /* Prevents additional touch behaviors */
+  -ms-touch-action: manipulation;
+  -webkit-text-size-adjust: 100%; /* Prevents text zoom on iOS */
+  overscroll-behavior: none; /* Prevents bouncing effects on some browsers */
+}
+
+
+.date-range {
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.chart-container {
+  border-radius: 8px;
+  height: 820px;
+  max-width: 1230px !important;
+  min-width: 1230px !important;
+}
+
+
+.workout-tracker {
+  display: flex;
+  width: 100%;
+}
+
+
+.clear-search {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+
+.clear-search:hover {
+  color: #fff;
+}
+
+/* Activity filter styling */
+.filters-panel {
+  padding-top: 5px;
+ 
+  border-radius: 5px;
+  margin-left: 10px;
+  width: 14vw;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.activity-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 4px;
+  background-color: #2f2f2f;
+}
+
+
+.activity-name {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.activity-name {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.activity-name {
+  color: #e0e0e0;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.only-button {
+  position: relative;
+  display: none;
+  background-color: #1e3a8a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  right: 5px;
+}
+
+.activity-filter:hover .only-button {
+  display: block;
+}
+
+/* Search bar styling */
+.search-container {
+  position: relative;
+  padding: 10px 0px 5px 10px;
+  width: 100%;
+  flex-shrink: 0; /* Prevent search from shrinking */
+}
+
+.search-input {
+  width: 95%;
+  padding: 12px 12px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: #222;
+  color: #fff;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #b4a4da;
+  box-shadow: 0 0 0 2px rgba(180, 164, 218, 0.3);
+}
+
+.clear-search {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+
+.clear-search:hover {
+  color: #fff;
+}
+
+
+.filters-container {
+  display: flex;
+  flex-direction: column;
+  border-radius: 5px;
+  padding-top: 4vh;
+  width: 13.5vw;
+}
+
+/* Activity filter styling */
+.filters-panel {
+  min-height: 820px; /* Adjust as needed */
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Custom scrollbar styling */
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #444 #222; /* Firefox: thumb and track color */
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) scrollbar styling */
+.filters-panel::-webkit-scrollbar {
+  width: 1px;
+  height: 0; /* Hide horizontal scrollbar */
+}
+
+
+
+.activity-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0; /* Allows flex items to shrink below content size */
+}
+
+.checkbox {
+  width: 15.5px;
+  height: 15.5px;
+  min-width: 18px; /* Prevent checkbox from shrinking */
+  margin-right: 4px;
+  cursor: pointer;
+  accent-color: #d7d7d7;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  overflow: hidden;
+  flex: 1;
+}
+
+.activity-name {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.only-button {
+  background-color: #333;
+  color: #ccc;
+  font-weight: bold;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 12px;
+  font-size: 15px;
+  margin-left: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.only-button:hover {
+  background-color: #444;
+  color: #fff;
+}
+
+.no-results {
+  padding: 10px;
+  color: #888;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Exercise shape styling */
+.exercise-shape {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin-right: 8px;
+  position: relative;
+  border: 1px solid;
+  border-radius: 50%; /* Default circle */
+}
+
+/* Shape variations based on pointStyle */
+.exercise-shape[style*="--point-style:triangle"],
+.exercise-shape[style*="--point-style: triangle"] {
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+.exercise-shape[style*="--point-style:rect"],
+.exercise-shape[style*="--point-style: rectangle"] {
+  border-radius: 0;
+}
+
+.exercise-shape[style*="--point-style:star"],
+.exercise-shape[style*="--point-style: star"] {
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+.exercise-shape[style*="--point-style:diamond"],
+.exercise-shape[style*="--point-style: diamond"] {
+  transform: rotate(45deg);
+}
+
+.exercise-shape[style*="--point-style:cross"],
+.exercise-shape[style*="--point-style: cross"] {
+  background-color: transparent !important;
+  position: relative;
+}
+
+.exercise-shape[style*="--point-style:cross"]::before,
+.exercise-shape[style*="--point-style: cross"]::before,
+.exercise-shape[style*="--point-style:cross"]::after,
+.exercise-shape[style*="--point-style: cross"]::after {
+  content: '';
+  position: absolute;
+  background-color: currentColor;
+}
+
+.exercise-shape[style*="--point-style:cross"]::before,
+.exercise-shape[style*="--point-style: cross"]::before {
+  width: 100%;
+  height: 2px;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.exercise-shape[style*="--point-style:cross"]::after,
+.exercise-shape[style*="--point-style: cross"]::after {
+  width: 2px;
+  height: 100%;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.date-sidebar {
+  background-color: #2C2F38;
+  width: 130px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-right: 4px;
+  height: 100vh;
+  color: #e0e0e0;
+  font-size: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #222;
+}
+
+.date-sidebar::-webkit-scrollbar {
+  width: 3px;
+  height: 0;
+}
+
+.date-sidebar::-webkit-scrollbar-track {
+  background: #222;
+  border-radius: 3px;
+}
+
+.date-sidebar::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.date-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.year-section {
+
+  border-bottom: 1px solid #333;
+}
+
+.year-section:last-child {
+  border-bottom: none;
+}
+
+.year-header {
+  font-weight: bold;
+  padding: 12px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.2s;
+}
+
+.year-header:hover {
+  font-weight: bold;
+  background-color: #2a2a2a;
+}
+
+.arrow {
+  display: inline-block;
+  margin-right: 7px;
+  font-size: 10px;
+  color: #b4a4da;
+  transition: transform 0.2s;
+}
+
+.year-text {
+  color: #4f88e3;
+  font-weight: 500;
+}
+
+.months-container {
+  padding: 4px 0;
+}
+
+.month-item {
+  text-align: left;
+  padding: 8px 15px 8px 34px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.month-item:hover {
+  background-color: #2a2a2a;
+}
+
+.month-item.active {
+  background-color: #2c4a75;
+  position: relative;
+}
+
+.month-item.active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 12px;
+  background-color: #4f88e3;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+/* Update layout styles */
+.main-container {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.chart-and-controls {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}

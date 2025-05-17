@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Chest_Cross" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41.01 41.01">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #b7a5d0;
+        stroke: #b7a5d0;
+        stroke-miterlimit: 10;
+        stroke-width: 3px;
+      }
+    </style>
+  </defs>
+  <g id="Calisthinetics_Cross" data-name="Calisthinetics Cross">
+    <polyline class="cls-1" points="0 20.51 20.51 20.51 41.01 20.51"/>
+    <polyline class="cls-1" points="20.51 0 20.51 20.51 20.51 41.01"/>
+  </g>
+</svg>

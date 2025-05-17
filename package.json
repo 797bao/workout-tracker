@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "homepage": "https://797bao/github.io/workout-tracker",
+  "homepage": "https://797bao/github.io/workout-tracker/",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",

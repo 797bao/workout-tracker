@@ -32,7 +32,6 @@ html, body, #root, .app, .app-content {
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* This prevents scrolling which can trigger zoom on some devices */
   touch-action: manipulation;
   -ms-touch-action: manipulation;
   -webkit-text-size-adjust: 100%;

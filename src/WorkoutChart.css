@@ -420,3 +420,70 @@ html, body {
   flex-direction: column;
   flex: 1;
 }
+
+.mode-toggle-button {
+  position: absolute;
+  top: 20px;
+  left: 150px;
+  padding: 8px 16px;
+  width: 120px; /* Fixed width */
+  height: 36px; /* Fixed height */
+  border-radius: 20px;
+  border: none;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  background-color: #b4a4da;
+  color: #1e1e1e;
+  z-index: 10;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center text */
+  text-align: center;
+}
+
+.mode-toggle-button:hover {
+  background-color: #c5b8e5;
+}
+
+/* Metric Toggle Buttons (Distance/Pace) */
+.metric-toggle {
+  position: absolute;
+  top: 20px;
+  left: 285px;
+  display: flex;
+  align-items: center;
+  background-color: #1e1e1e;
+  border-radius: 25px;
+  padding: 4px;
+  border: 1px solid #444;
+  z-index: 10;
+  height: 32px; /* Fixed height */
+}
+
+.metric-toggle-button {
+  width: 90px; /* Fixed width */
+  height: 32px; /* Fixed height */
+  border-radius: 20px;
+  border: none;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  background-color: transparent;
+  color: #aaa;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center text */
+  text-align: center;
+}
+
+.metric-toggle-button.active {
+  background-color: #cadcfd;
+  color: #1e1e1e;
+}
+
+.metric-toggle-button:hover:not(.active) {
+  color: #fff;
+}

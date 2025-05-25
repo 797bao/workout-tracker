@@ -123,10 +123,16 @@ const WorkoutChart = () => {
     const chartInstance = useRef(null);
 
     // State variables
+    const [mode, setMode] = useState('strength'); // 'workout' or 'cardio'
+    const [metricType, setMetricType] = useState('distance');
     const [exercises, setExercises] = useState({}); //list of exercises pulled from firebase
     const [workouts, setWorkouts] = useState({});   //list of workouts pulled from firebase
     const lastToggleActivityRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState('');
+
+    const [cardioExercises, setCardioExercises] = useState({});
+    const [cardioWorkouts, setCardioWorkouts] = useState({});
+    const [selectedCardioActivities, setSelectedCardioActivities] = useState([]);
 
     // ... [rest of existing state and useEffects]
 
@@ -160,6 +166,7 @@ const WorkoutChart = () => {
     const [selectedActivities, setSelectedActivities] = useState([]);
 
     // Initialize muscle groups state
+    // Initialize muscle groups state
     useEffect(() => {
         if (selectedGroups.length === 0) {
             setSelectedGroups(Object.keys(muscleGroups));
@@ -168,18 +175,61 @@ const WorkoutChart = () => {
         // Fetch exercises data
         console.log("initializing exercises");
         const exercisesRef = ref(database, 'exercises');
-
         const unsubscribe = onValue(exercisesRef, (snapshot) => {
             const data = snapshot.val() || {};
             setExercises(data);
         });
 
-        return () => unsubscribe();
+        // Fetch cardio exercises
+        const cardioExercisesRef = ref(database, 'cardioExercises');
+        const cardioUnsubscribe = onValue(cardioExercisesRef, (snapshot) => {
+            const data = snapshot.val() || {};
+            setCardioExercises(data);
+
+            // Initialize selected cardio activities
+            if (Object.keys(data).length > 0 && selectedCardioActivities.length === 0) {
+                setSelectedCardioActivities(Object.keys(data));
+            }
+        });
+
+        return () => {
+            unsubscribe();
+            cardioUnsubscribe();
+        };
     }, []);
 
+    // Add this useEffect near the other useEffects in your WorkoutChart component
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (!event.ctrlKey && event.key === 'Tab') {
+                event.preventDefault(); // Prevent default browser tab switching
+
+                // Toggle between strength and cardio mode
+                setMode(prevMode => {
+                    const newMode = prevMode === 'strength' ? 'cardio' : 'strength';
+
+                    // Reset Y-axis reverse when switching modes
+                    if (chartInstance.current) {
+                        chartInstance.current.options.scales.y.reverse = false;
+                    }
+
+                    return newMode;
+                });
+            }
+        };
+
+        // Add event listener
+        document.addEventListener('keydown', handleKeyDown);
+
+        // Cleanup function to remove event listener
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []); // Empty dependency array since we only want to set this up once
 
     // Fetch workouts based on date range
     // Add this fix to the useEffect for fetching workouts based on date range
+    // Fetch workouts based on date range and current mode
     useEffect(() => {
         if (chartInstance.current) {
             // Update x-axis min and max when month changes
@@ -190,53 +240,98 @@ const WorkoutChart = () => {
         if (!dateRange.startDate || !dateRange.endDate) return;
 
         // Reset legend filtering when changing months
-        // This ensures we don't carry over filtered state from previous month
         setSelectedGroups(Object.keys(muscleGroups));
         lastToggleActivityRef.current = null;
 
         // Get year and month for the path
         const year = dateRange.startDate.getFullYear().toString();
         const month = (dateRange.startDate.getMonth() + 1).toString().padStart(2, '0');
-        console.log(`Fetching workouts for ${year}/${month}`);
-        // Direct reference to the specific month's data
-        const monthWorkoutsRef = ref(database, `workouts/${year}/${month}`);
 
-        const unsubscribe = onValue(monthWorkoutsRef, (snapshot) => {
-            const monthData = snapshot.val() || {};
-            setWorkouts(monthData);
-        });
+        if (mode === 'strength') {
+            // Fetch strength workouts
+            console.log(`Fetching strength workouts for ${year}/${month}`);
+            const monthWorkoutsRef = ref(database, `workouts/${year}/${month}`);
 
-        return () => unsubscribe();
-    }, [dateRange]);
+            const unsubscribe = onValue(monthWorkoutsRef, (snapshot) => {
+                const monthData = snapshot.val() || {};
+                setWorkouts(monthData);
+            });
+
+            return () => unsubscribe();
+        } else {
+            // Fetch cardio workouts
+            console.log(`Fetching cardio workouts for ${year}/${month}`);
+            const cardioMonthRef = ref(database, `cardio/${year}/${month}`);
+
+            const unsubscribe = onValue(cardioMonthRef, (snapshot) => {
+                const monthData = snapshot.val() || {};
+                setCardioWorkouts(monthData);
+            });
+
+            return () => unsubscribe();
+        }
+    }, [dateRange, mode]); // Add mode as a dependency
 
     // Process data and update chart
     useEffect(() => {
-        if (Object.keys(exercises).length === 0) {
-            return; // Only wait for exercises to load
+        if ((mode === 'strength' && Object.keys(exercises).length === 0) ||
+            (mode === 'cardio' && Object.keys(cardioExercises).length === 0)) {
+            return; // Only wait for appropriate exercises to load
         }
-        console.log("updated selectedGroups", selectedGroups);
+
+        console.log(`Updating chart for ${mode} mode with ${metricType} metric type`);
         updateChart();
-    }, [exercises, workouts, selectedActivities, selectedGroups]);
+        updateChartMode(); // Add this line
+    }, [
+        exercises,
+        workouts,
+        cardioExercises,
+        cardioWorkouts,
+        selectedActivities,
+        selectedCardioActivities,
+        selectedGroups,
+        mode,
+        metricType
+    ]);
 
 
     const displayedActivities = useMemo(() => {
-        return filteredActivities.filter(activity =>
-            activity.name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [filteredActivities, searchTerm]);
+        if (mode === 'strength') {
+            return filteredActivities.filter(activity =>
+                activity.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        } else {
+            // In cardio mode, return cardio exercises
+            return Object.entries(cardioExercises)
+                .filter(([id, exercise]) =>
+                    exercise.name.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+                .map(([id, exercise]) => ({
+                    id,
+                    name: exercise.name,
+                    selected: selectedCardioActivities.includes(id)
+                }));
+        }
+    }, [
+        mode,
+        filteredActivities,
+        cardioExercises,
+        selectedCardioActivities,
+        searchTerm
+    ]);
 
 
     useEffect(() => {
         console.log("updating filtered activities");
-    
+
         // Store current filter state before updating
         const currentSelectedIds = new Set(selectedActivities);
-        const isFilteringByLegend = selectedGroups.length === 1;
-        const currentLegendFilter = isFilteringByLegend ? selectedGroups[0] : null;
-        
+        const isFilteringByLegend = selectedGroups.length < Object.keys(muscleGroups).length; // FIX: Changed from length === 1
+        const currentLegendFilter = selectedGroups; // FIX: Store all selected groups, not just one
+
         // Detect if we're in "ONLY" mode - a single selected activity
         const isInOnlyMode = currentSelectedIds.size === 1 && filteredActivities.length > 1;
-        
+
         // Reset everything if workouts object is empty
         if (Object.keys(workouts).length === 0) {
             console.log("No workouts found for this month - clearing filters panel");
@@ -244,13 +339,13 @@ const WorkoutChart = () => {
             setSelectedActivities([]);
             return;
         }
-    
+
         // Check if exercises data is loaded
         if (Object.keys(exercises).length === 0) return;
-    
+
         // Get the list of exercises that exist in the current month's workouts
         const exercisesInCurrentMonth = new Set();
-    
+
         // Loop through all workouts for the current month
         Object.keys(workouts).forEach(dateKey => {
             const exercisesForDate = workouts[dateKey];
@@ -259,7 +354,7 @@ const WorkoutChart = () => {
                 exercisesInCurrentMonth.add(exerciseId);
             });
         });
-    
+
         // If we found no exercises in this month, clear the filters
         if (exercisesInCurrentMonth.size === 0) {
             console.log("No exercises found in workouts for this month");
@@ -267,7 +362,7 @@ const WorkoutChart = () => {
             setSelectedActivities([]);
             return;
         }
-    
+
         // Create a map of previous activity states for reference
         const previousActivityMap = new Map();
         filteredActivities.forEach(activity => {
@@ -276,7 +371,7 @@ const WorkoutChart = () => {
                 muscleGroup: activity.muscleGroup
             });
         });
-    
+
         // Transform only the exercises that exist in the current month
         let activitiesList = Array.from(exercisesInCurrentMonth)
             .filter(exerciseId => exercises[exerciseId]) // Make sure the exercise exists in our exercises object
@@ -284,29 +379,27 @@ const WorkoutChart = () => {
                 const exercise = exercises[exerciseId];
                 const previous = previousActivityMap.get(exerciseId);
                 const isNewActivity = !previous; // This is a newly added activity
-                
+
                 // Determine if this activity should be selected based on your rules:
                 let shouldBeSelected;
-                
+
                 if (isInOnlyMode) {
                     // If in ONLY mode, only the single previously selected activity should be selected
                     shouldBeSelected = currentSelectedIds.has(exerciseId);
                 } else if (isFilteringByLegend) {
-                    // If filtering by muscle group, activities should be selected if:
-                    // 1. They belong to the filtered muscle group AND
-                    // 2. Either they're not new OR we're not in a partial selection state
-                    const belongsToFilteredGroup = exercise.muscleGroup === currentLegendFilter;
-                    const hasPartialSelectionInGroup = filteredActivities.some(a => 
-                        a.muscleGroup === currentLegendFilter && !a.selected
+                    // FIX: Check if the exercise belongs to any of the selected groups
+                    const belongsToFilteredGroup = selectedGroups.includes(exercise.muscleGroup);
+                    const hasPartialSelectionInGroup = filteredActivities.some(a =>
+                        selectedGroups.includes(a.muscleGroup) && !a.selected
                     );
-                    
-                    shouldBeSelected = belongsToFilteredGroup && 
+
+                    shouldBeSelected = belongsToFilteredGroup &&
                         (!isNewActivity || !hasPartialSelectionInGroup);
                 } else {
                     // Normal case - maintain previous selection, new items are selected
                     shouldBeSelected = isNewActivity || (previous && previous.selected);
                 }
-                
+
                 return {
                     id: exerciseId,
                     name: exercise.name,
@@ -314,74 +407,98 @@ const WorkoutChart = () => {
                     selected: shouldBeSelected
                 };
             });
-    
-        // If filtering by legend, only show activities from that muscle group
+
+        // FIX: If filtering by legend, only show activities from the selected muscle groups
         if (isFilteringByLegend) {
-            activitiesList = activitiesList.filter(activity => 
-                activity.muscleGroup === currentLegendFilter
+            activitiesList = activitiesList.filter(activity =>
+                selectedGroups.includes(activity.muscleGroup)
             );
         }
-    
+
         // Sort by muscle group and then by name for better organization
         activitiesList.sort((a, b) => {
             // First sort by muscle group order
             const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
             const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
-    
+
             if (groupOrderA !== groupOrderB) {
                 return groupOrderA - groupOrderB;
             }
-    
+
             // Then by name
             return a.name.localeCompare(b.name);
         });
-    
+
         // Update the filtered activities
         setFilteredActivities(activitiesList);
-        
+
         // Update selectedActivities to match
         const newSelectedActivities = activitiesList
             .filter(a => a.selected)
             .map(a => a.id);
-        
+
         setSelectedActivities(newSelectedActivities);
-    
+
         console.log("Filtered activities updated:", activitiesList);
         console.log("Selected activities updated:", newSelectedActivities);
     }, [exercises, workouts, dateRange, selectedGroups, filteredActivities.length]);
 
-
-
     const handleActivityToggle = (activityId) => {
+        // If in cardio mode, handle cardio activities
+        if (mode === 'cardio') {
+            // Check if this is the last selected activity and if we're trying to uncheck it
+            if (selectedCardioActivities.length === 1 && selectedCardioActivities[0] === activityId) {
+                // If unchecking the last selected cardio activity, select all cardio activities
+                console.log("Selecting all cardio activities");
+                setSelectedCardioActivities(Object.keys(cardioExercises));
+            } else {
+                // Normal toggle behavior
+                setSelectedCardioActivities(prev => {
+                    if (prev.includes(activityId)) {
+                        // Remove if already selected
+                        return prev.filter(id => id !== activityId);
+                    } else {
+                        // Add if not selected
+                        return [...prev, activityId];
+                    }
+                });
+            }
+
+            // Update chart immediately
+            updateChart();
+            return;
+        }
+
+        // Existing strength mode logic
         const isLastSelected = selectedActivities.length === 1 && selectedActivities[0] === activityId;
 
         // Get the current activity and its muscle group
         const activity = filteredActivities.find(a => a.id === activityId);
         if (!activity) return;
 
-        // Check if we're currently filtered to a specific muscle group from legend
-        const isFilteredByLegend = selectedGroups.length === 1;
-        const currentFilterGroup = isFilteredByLegend ? selectedGroups[0] : null;
+        // Check if we're currently filtered to specific muscle groups from legend
+        const isFilteredByLegend = selectedGroups.length < Object.keys(muscleGroups).length;
+        const currentFilterGroups = selectedGroups; // All currently selected groups
 
         if (isLastSelected) {
             // If unchecking the last selected exercise
 
             if (isFilteredByLegend) {
-                // If we're filtered by legend, only select all activities from the current muscle group
-                const activitiesInGroup = filteredActivities.filter(a =>
-                    a.muscleGroup === currentFilterGroup
+                // If we're filtered by legend, only select all activities from the current muscle groups
+                const activitiesInGroups = filteredActivities.filter(a =>
+                    currentFilterGroups.includes(a.muscleGroup)
                 );
 
-                // Set all activities in this group to selected
+                // Set all activities in these groups to selected
                 setFilteredActivities(prev => prev.map(activity => ({
                     ...activity,
-                    selected: activity.muscleGroup === currentFilterGroup
+                    selected: currentFilterGroups.includes(activity.muscleGroup)
                 })));
 
-                // Update selectedActivities to include all IDs from the filtered group
-                setSelectedActivities(activitiesInGroup.map(a => a.id));
+                // Update selectedActivities to include all IDs from the filtered groups
+                setSelectedActivities(activitiesInGroups.map(a => a.id));
 
-                console.log("Selecting all activities in current filtered group:", currentFilterGroup);
+                console.log("Selecting all activities in current filtered groups:", currentFilterGroups);
             } else {
                 // If not filtered by legend, select all activities (original behavior)
                 setFilteredActivities(prev => prev.map(activity => ({
@@ -391,9 +508,6 @@ const WorkoutChart = () => {
 
                 const allActivityIds = filteredActivities.map(a => a.id);
                 setSelectedActivities(allActivityIds);
-
-                // Update selectedGroups to include all muscle groups
-                setSelectedGroups(Object.keys(muscleGroups));
 
                 console.log("Selecting all activities (no legend filter)");
             }
@@ -421,31 +535,28 @@ const WorkoutChart = () => {
         // Update selectedActivities
         setSelectedActivities(newSelectedActivities);
 
-        // Now update the selectedGroups based on which muscle groups are still represented
-        if (!isFilteredByLegend) {
-            // Only update muscle group selection if we're not already filtered by legend
-            const remainingMuscleGroups = new Set();
-
-            // For each selected activity, add its muscle group to the set
-            newSelectedActivities.forEach(id => {
-                const act = filteredActivities.find(a => a.id === id);
-                if (act) {
-                    remainingMuscleGroups.add(act.muscleGroup);
-                }
-            });
-
-            // Update selectedGroups with the remaining muscle groups
-            if (remainingMuscleGroups.size > 0) {
-                setSelectedGroups(Array.from(remainingMuscleGroups));
-            }
-        }
+        // DON'T update muscle groups when toggling individual activities
+        // The muscle group selection should remain independent of individual activity selection
+        // Remove this entire block that was causing the unwanted muscle group filtering
 
         console.log("Updated selectedActivities:", newSelectedActivities);
-        console.log("Legend filter active:", isFilteredByLegend ? currentFilterGroup : "none");
+        console.log("Legend filter active:", isFilteredByLegend ? currentFilterGroups : "none");
     };
 
     const handleOnlyClick = (activityId) => {
         console.log("handleOnlyClick", activityId);
+
+        // Handle cardio mode
+        if (mode === 'cardio') {
+            // Select only this cardio activity
+            setSelectedCardioActivities([activityId]);
+
+            // Update chart immediately
+            updateChart();
+            return;
+        }
+
+        // Original strength mode logic
         const clickedActivity = filteredActivities.find(a => a.id === activityId);
         if (!clickedActivity) return;
 
@@ -458,23 +569,45 @@ const WorkoutChart = () => {
         // Update selectedActivities
         setSelectedActivities([activityId]);
 
-        // FIX HERE: Change from a string to an array with one element
-        //setSelectedGroups([clickedActivity.muscleGroup]); // Was incorrectly: setSelectedGroups(clickedActivity.muscleGroup);
-        //lastToggleActivityRef.current = clickedActivity.muscleGroup;
+        // REMOVE THIS LINE - Don't change selectedGroups (legend)
+        // setSelectedGroups([clickedActivity.muscleGroup]);
     };
 
-    // Add this function near the top of your component
-    const getExerciseIconPath = (exercise) => {
+    const getCardioIconPath = (exerciseId) => {
+        const exercise = cardioExercises[exerciseId];
         if (!exercise) return null;
 
-        const muscleGroup = exercise.muscleGroup;
-        const pointStyle = exercise.pointStyle || 'circle'; // This comes from your Firebase data
+        const pointStyle = exercise.pointStyle || 'circle';
         const backgroundColor = exercise.backgroundColor || '#ffffff';
-
-        // Determine if we need the stroke version (for black background)
         const needsStrokeVersion = backgroundColor === '#000000';
+        const borderColor = exercise.borderColor;
+        console.log("borderColor", borderColor);
+        // Map pointStyle to shape component
+        let groupPrefix;
+        switch (borderColor) {
+            case "#b5a4da":
+                groupPrefix = 'Calisthenics_';
+                break;
+            case "#f44336":
+                groupPrefix = 'Chest_';
+                break;
+            case "#ea9999":
+                groupPrefix = 'Back_';
+                break;
+            case "#ffad3f":
+                groupPrefix = 'Delts_';
+                break;
+            case "#93c47d":
+                groupPrefix = 'Arms_';
+                break;
+            case "#6d9eeb":
+                groupPrefix = 'Upper Legs_';
+                break;
+            case "#cadcfd":
+                groupPrefix = 'Lower Legs_';
+                break;
+        }
 
-        // Map pointStyle directly to file name component
         let shapeComponent;
         switch (pointStyle.toLowerCase()) {
             case 'triangle':
@@ -490,10 +623,10 @@ const WorkoutChart = () => {
                 shapeComponent = needsStrokeVersion ? 'RectRoundedStroke' : 'RectRounded';
                 break;
             case 'cross':
-                shapeComponent = 'Cross'; // Cross doesn't have a stroke version
+                shapeComponent = 'Cross';
                 break;
             case 'crossrot':
-                shapeComponent = 'CrossRot'; // Added this for completeness
+                shapeComponent = 'CrossRot';
                 break;
             case 'circle':
             default:
@@ -501,7 +634,54 @@ const WorkoutChart = () => {
                 break;
         }
 
-        // Map muscle group to folder prefix
+        // Use Lower Legs prefix for cardio icons
+
+        // Construct the filename and URL
+        const fileName = `${groupPrefix}${shapeComponent}.svg`;
+        const safeFile = encodeURIComponent(fileName);
+
+        return `${process.env.PUBLIC_URL}/icons/${safeFile}`;
+    };
+
+    // Add this function near the top of your component
+    const getExerciseIconPath = (exercise) => {
+        if (!exercise) return null;
+
+        const muscleGroup = exercise.muscleGroup;
+        const pointStyle = exercise.pointStyle || 'circle'; // comes from your Firebase data
+        const backgroundColor = exercise.backgroundColor || '#ffffff';
+
+        // Determine if we need the “stroke” version (for a black BG)
+        const needsStrokeVersion = backgroundColor === '#000000';
+
+        // Map pointStyle to the shape component name
+        let shapeComponent;
+        switch (pointStyle.toLowerCase()) {
+            case 'triangle':
+                shapeComponent = needsStrokeVersion ? 'TriangleStroke' : 'Triangle';
+                break;
+            case 'rectrot':
+                shapeComponent = needsStrokeVersion ? 'RectRotStroke' : 'RectRot';
+                break;
+            case 'rect':
+                shapeComponent = needsStrokeVersion ? 'RectStroke' : 'Rect';
+                break;
+            case 'rectrounded':
+                shapeComponent = needsStrokeVersion ? 'RectRoundedStroke' : 'RectRounded';
+                break;
+            case 'cross':
+                shapeComponent = 'Cross';
+                break;
+            case 'crossrot':
+                shapeComponent = 'CrossRot';
+                break;
+            case 'circle':
+            default:
+                shapeComponent = needsStrokeVersion ? 'CircleStroke' : 'Circle';
+                break;
+        }
+
+        // Map muscleGroup to the filename prefix
         let groupPrefix;
         switch (muscleGroup) {
             case 'Calisthenics':
@@ -529,12 +709,62 @@ const WorkoutChart = () => {
                 groupPrefix = '';
         }
 
-        return `/icons/${groupPrefix}${shapeComponent}.svg`;
+        // Construct filename and URL-encode it (handles spaces/case)
+        const fileName = `${groupPrefix}${shapeComponent}.svg`;
+        const safeFile = encodeURIComponent(fileName);
+
+        // Use PUBLIC_URL so it respects your “homepage” path
+        return `${process.env.PUBLIC_URL}/icons/${safeFile}`;
+    };
+
+    const updateChart = () => {
+        console.log(`updateChart - mode: ${mode}, metricType: ${metricType}`);
+
+        today = new Date();
+        currentDay = today.getDate().toString();
+        isCurrentMonth = (
+            today.getMonth() === dateRange.startDate.getMonth() &&
+            today.getFullYear() === dateRange.startDate.getFullYear()
+        );
+
+        const chartContext = chartRef.current?.getContext('2d');
+        if (!chartContext) return;
+
+        if (mode === 'strength') {
+            updateStrengthChart();
+        } else {
+            updateCardioChart();
+        }
+    };
+
+    // Create modified chart configuration when switching modes
+    const updateChartMode = () => {
+        if (!chartInstance.current) return;
+
+        if (mode === 'cardio') {
+            // Hide all strength legend items and datasets
+            chartInstance.current.data.datasets.forEach((dataset, i) => {
+                if (dataset.label in muscleGroups) {
+                    chartInstance.current.setDatasetVisibility(i, false);
+                }
+            });
+
+            // Only display cardio data
+            chartInstance.current.options.plugins.legend.display = false;
+        } else {
+            // Show strength legend items and update visibility based on selectedGroups
+            chartInstance.current.options.plugins.legend.display = true;
+            chartInstance.current.data.datasets.forEach((dataset, i) => {
+                chartInstance.current.setDatasetVisibility(i, selectedGroups.includes(dataset.label));
+            });
+        }
+
+        chartInstance.current.update();
     };
 
     // Update chart with processed data
     // Modified updateChart function for new data structure
-    const updateChart = () => {
+    const updateStrengthChart = () => {
         console.log("selectedActivities from update chart", selectedActivities);
         today = new Date();
         currentDay = today.getDate().toString();
@@ -563,22 +793,16 @@ const WorkoutChart = () => {
             backgroundColorDict[group] = [];
         });
 
-
-
         Object.keys(workouts).forEach(dateKey => {
             const exercisesForDate = workouts[dateKey];
             // For each exercise on this date
             Object.keys(exercisesForDate).forEach(exerciseId => {
-
-                //console.log("exerciseId", exerciseId);
-                //console.log("selectedActivities", selectedActivities);
                 if (selectedActivities.length > 0 && !selectedActivities.includes(exerciseId)) {
                     return; // Skip this exercise
                 }
 
                 const workout = exercisesForDate[exerciseId];
                 const exercise = exercises[exerciseId];
-
 
                 if (exercise) {
                     const muscleGroup = exercise.muscleGroup;
@@ -653,7 +877,6 @@ const WorkoutChart = () => {
                             dict[muscleGroup].push(dataPoint);
                         }
 
-
                         shapesDict[muscleGroup].push(exercise.pointStyle);
                         borderColorDict[muscleGroup].push(exercise.borderColor);
                         backgroundColorDict[muscleGroup].push(exercise.backgroundColor);
@@ -666,7 +889,6 @@ const WorkoutChart = () => {
         const chartData = {
             datasets: []
         };
-
 
         let hasData = false;
         Object.keys(dict).forEach((key) => {
@@ -686,13 +908,34 @@ const WorkoutChart = () => {
             }
         });
 
-
         console.log("chartData", chartData);
 
         // Create or update chart
         if (chartInstance.current) {
+            // Completely reset the Y-axis for strength mode
+            chartInstance.current.options.scales.y.min = 0;
+            chartInstance.current.options.scales.y.max = 300;
+            chartInstance.current.options.scales.y.title.text = 'Weight';
+            chartInstance.current.options.scales.y.ticks.stepSize = 25;
+
+            // Restore strength mode callback for ticks
+            chartInstance.current.options.scales.y.ticks.callback = function (value) {
+                return value % 25 === 0 ? value : '';
+            };
+
+            // Reset any bounds/grace settings that might have been set in cardio mode
+            chartInstance.current.options.scales.y.bounds = 'ticks';
+            chartInstance.current.options.scales.y.grace = 0;
+
+            // Re-apply afterBuildTicks function for strength mode
+            chartInstance.current.options.scales.y.afterBuildTicks = function (axis) {
+                axis.max += 5;
+            };
+
+            chartInstance.current.options.plugins.tooltip.callbacks = createTooltipCallback();
+            // Update the data
             chartInstance.current.data = chartData;
-            chartInstance.current.update();
+
             console.log("hasData " + hasData);
             if (!hasData) {
                 // Clear any old points
@@ -712,9 +955,6 @@ const WorkoutChart = () => {
                 chartInstance.current.options.plugins.title = {
                     display: false
                 };
-
-                // Update legend click handler and labels...
-                // Your existing code here
             }
 
             // re-bind legend click so it sees the latest `workouts`
@@ -772,88 +1012,231 @@ const WorkoutChart = () => {
             chartInstance.current.options.plugins.legend.onClick = (e, legendItem) => {
                 console.log("legend click new", legendItem);
                 console.log("selectedGroups", selectedGroups);
+                console.log("Shift key pressed:", e.native.shiftKey);
 
                 const clickedGroup = legendItem.text;
 
-                if (lastToggleActivityRef.current === clickedGroup) {
-                    // If clicking the same group again, show all groups and all activities
-                    lastToggleActivityRef.current = null;
-                    setSelectedGroups(Object.keys(muscleGroups));
+                // Check if shift key is held
+                if (e.native.shiftKey) {
+                    // Shift-click behavior: add/remove individual muscle groups
+                    if (selectedGroups.includes(clickedGroup)) {
+                        // Remove the clicked group
+                        const newSelectedGroups = selectedGroups.filter(group => group !== clickedGroup);
 
-                    // Make all activities in original dataset visible and selected
-                    const activitiesList = Array.from(
-                        new Set(Object.values(workouts).flatMap(exercisesForDate =>
-                            Object.keys(exercisesForDate)
-                        ))
-                    )
-                        .filter(exerciseId => exercises[exerciseId])
-                        .map(exerciseId => {
-                            const exercise = exercises[exerciseId];
-                            return {
-                                id: exerciseId,
-                                name: exercise.name,
-                                muscleGroup: exercise.muscleGroup,
-                                selected: true
-                            };
-                        });
+                        // If this was the last group, select all groups instead
+                        if (newSelectedGroups.length === 0) {
+                            setSelectedGroups(Object.keys(muscleGroups));
 
-                    // Sort activities as before
-                    activitiesList.sort((a, b) => {
-                        const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
-                        const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
+                            // Make all activities visible and selected
+                            const activitiesList = Array.from(
+                                new Set(Object.values(workouts).flatMap(exercisesForDate =>
+                                    Object.keys(exercisesForDate)
+                                ))
+                            )
+                                .filter(exerciseId => exercises[exerciseId])
+                                .map(exerciseId => {
+                                    const exercise = exercises[exerciseId];
+                                    return {
+                                        id: exerciseId,
+                                        name: exercise.name,
+                                        muscleGroup: exercise.muscleGroup,
+                                        selected: true
+                                    };
+                                });
 
-                        if (groupOrderA !== groupOrderB) {
-                            return groupOrderA - groupOrderB;
+                            // Sort activities
+                            activitiesList.sort((a, b) => {
+                                const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
+                                const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
+
+                                if (groupOrderA !== groupOrderB) {
+                                    return groupOrderA - groupOrderB;
+                                }
+
+                                return a.name.localeCompare(b.name);
+                            });
+
+                            setFilteredActivities(activitiesList);
+                            setSelectedActivities(activitiesList.map(a => a.id));
+
+                            console.log("Last group removed - all groups now active");
+                        } else {
+                            // Update to new selected groups
+                            setSelectedGroups(newSelectedGroups);
+
+                            // Update activities to match the new selected groups
+                            const exercisesInCurrentMonth = new Set();
+                            Object.keys(workouts).forEach(dateKey => {
+                                const exercisesForDate = workouts[dateKey];
+                                Object.keys(exercisesForDate).forEach(exerciseId => {
+                                    exercisesInCurrentMonth.add(exerciseId);
+                                });
+                            });
+
+                            const filteredList = Array.from(exercisesInCurrentMonth)
+                                .filter(exerciseId => {
+                                    const exercise = exercises[exerciseId];
+                                    return exercise && newSelectedGroups.includes(exercise.muscleGroup);
+                                })
+                                .map(exerciseId => {
+                                    const exercise = exercises[exerciseId];
+                                    return {
+                                        id: exerciseId,
+                                        name: exercise.name,
+                                        muscleGroup: exercise.muscleGroup,
+                                        selected: true
+                                    };
+                                });
+
+                            filteredList.sort((a, b) => {
+                                const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
+                                const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
+
+                                if (groupOrderA !== groupOrderB) {
+                                    return groupOrderA - groupOrderB;
+                                }
+
+                                return a.name.localeCompare(b.name);
+                            });
+
+                            setFilteredActivities(filteredList);
+                            setSelectedActivities(filteredList.map(a => a.id));
+
+                            console.log("Removed group:", clickedGroup);
                         }
+                    } else {
+                        // Add the clicked group to existing selection
+                        const newSelectedGroups = [...selectedGroups, clickedGroup];
+                        setSelectedGroups(newSelectedGroups);
 
-                        return a.name.localeCompare(b.name);
-                    });
+                        // Update activities to include the newly added group
+                        const exercisesInCurrentMonth = new Set();
+                        Object.keys(workouts).forEach(dateKey => {
+                            const exercisesForDate = workouts[dateKey];
+                            Object.keys(exercisesForDate).forEach(exerciseId => {
+                                exercisesInCurrentMonth.add(exerciseId);
+                            });
+                        });
 
-                    setFilteredActivities(activitiesList);
-                    setSelectedActivities(activitiesList.map(a => a.id));
+                        const filteredList = Array.from(exercisesInCurrentMonth)
+                            .filter(exerciseId => {
+                                const exercise = exercises[exerciseId];
+                                return exercise && newSelectedGroups.includes(exercise.muscleGroup);
+                            })
+                            .map(exerciseId => {
+                                const exercise = exercises[exerciseId];
+                                return {
+                                    id: exerciseId,
+                                    name: exercise.name,
+                                    muscleGroup: exercise.muscleGroup,
+                                    selected: true
+                                };
+                            });
 
-                    console.log("All groups selected new click");
+                        filteredList.sort((a, b) => {
+                            const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
+                            const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
+
+                            if (groupOrderA !== groupOrderB) {
+                                return groupOrderA - groupOrderB;
+                            }
+
+                            return a.name.localeCompare(b.name);
+                        });
+
+                        setFilteredActivities(filteredList);
+                        setSelectedActivities(filteredList.map(a => a.id));
+
+                        console.log("Added group:", clickedGroup);
+                    }
+
+                    // Clear the last toggle reference when using shift-click
+                    lastToggleActivityRef.current = null;
+
                 } else {
-                    // If clicking a different group, show only that group
-                    lastToggleActivityRef.current = clickedGroup;
-                    setSelectedGroups([clickedGroup]);
+                    // Original click behavior (without shift)
+                    // FIX: Check if clicking the only active group OR if it's the same as last toggle
+                    if ((selectedGroups.length === 1 && selectedGroups[0] === clickedGroup) ||
+                        lastToggleActivityRef.current === clickedGroup) {
+                        // If clicking the only active group OR clicking the same group again, show all groups
+                        lastToggleActivityRef.current = null;
+                        setSelectedGroups(Object.keys(muscleGroups));
 
-                    // Filter the activities to only include ones from this muscle group
-                    const exercisesInCurrentMonth = new Set();
-
-                    // Get all exercise IDs from current month
-                    Object.keys(workouts).forEach(dateKey => {
-                        const exercisesForDate = workouts[dateKey];
-                        Object.keys(exercisesForDate).forEach(exerciseId => {
-                            exercisesInCurrentMonth.add(exerciseId);
-                        });
-                    });
-
-                    // Filter to only activities of the clicked muscle group
-                    const filteredList = Array.from(exercisesInCurrentMonth)
-                        .filter(exerciseId =>
-                            exercises[exerciseId] &&
-                            exercises[exerciseId].muscleGroup === clickedGroup
+                        // Make all activities in original dataset visible and selected
+                        const activitiesList = Array.from(
+                            new Set(Object.values(workouts).flatMap(exercisesForDate =>
+                                Object.keys(exercisesForDate)
+                            ))
                         )
-                        .map(exerciseId => {
-                            const exercise = exercises[exerciseId];
-                            return {
-                                id: exerciseId,
-                                name: exercise.name,
-                                muscleGroup: exercise.muscleGroup,
-                                selected: true
-                            };
+                            .filter(exerciseId => exercises[exerciseId])
+                            .map(exerciseId => {
+                                const exercise = exercises[exerciseId];
+                                return {
+                                    id: exerciseId,
+                                    name: exercise.name,
+                                    muscleGroup: exercise.muscleGroup,
+                                    selected: true
+                                };
+                            });
+
+                        // Sort activities as before
+                        activitiesList.sort((a, b) => {
+                            const groupOrderA = muscleGroups[a.muscleGroup]?.order || 999;
+                            const groupOrderB = muscleGroups[b.muscleGroup]?.order || 999;
+
+                            if (groupOrderA !== groupOrderB) {
+                                return groupOrderA - groupOrderB;
+                            }
+
+                            return a.name.localeCompare(b.name);
                         });
 
-                    // Sort the filtered activities
-                    filteredList.sort((a, b) => a.name.localeCompare(b.name));
+                        setFilteredActivities(activitiesList);
+                        setSelectedActivities(activitiesList.map(a => a.id));
 
-                    // Update state
-                    setFilteredActivities(filteredList);
-                    setSelectedActivities(filteredList.map(a => a.id));
+                        console.log("All groups selected new click");
+                    } else {
+                        // If clicking a different group, show only that group
+                        lastToggleActivityRef.current = clickedGroup;
+                        setSelectedGroups([clickedGroup]);
 
-                    console.log("Selected group: new click", clickedGroup);
-                    console.log("Filtered to activities:", filteredList.length);
+                        // Filter the activities to only include ones from this muscle group
+                        const exercisesInCurrentMonth = new Set();
+
+                        // Get all exercise IDs from current month
+                        Object.keys(workouts).forEach(dateKey => {
+                            const exercisesForDate = workouts[dateKey];
+                            Object.keys(exercisesForDate).forEach(exerciseId => {
+                                exercisesInCurrentMonth.add(exerciseId);
+                            });
+                        });
+
+                        // Filter to only activities of the clicked muscle group
+                        const filteredList = Array.from(exercisesInCurrentMonth)
+                            .filter(exerciseId =>
+                                exercises[exerciseId] &&
+                                exercises[exerciseId].muscleGroup === clickedGroup
+                            )
+                            .map(exerciseId => {
+                                const exercise = exercises[exerciseId];
+                                return {
+                                    id: exerciseId,
+                                    name: exercise.name,
+                                    muscleGroup: exercise.muscleGroup,
+                                    selected: true
+                                };
+                            });
+
+                        // Sort the filtered activities
+                        filteredList.sort((a, b) => a.name.localeCompare(b.name));
+
+                        // Update state
+                        setFilteredActivities(filteredList);
+                        setSelectedActivities(filteredList.map(a => a.id));
+
+                        console.log("Selected group: new click", clickedGroup);
+                        console.log("Filtered to activities:", filteredList.length);
+                    }
                 }
             };
 
@@ -955,17 +1338,195 @@ const WorkoutChart = () => {
                             display: hasData,
                             labels: {
                                 font: {
-                                    size: 17, // Increase this value to make the legend text larger
+                                    size: 17,
                                 },
-
                             },
-
-
                         }
                     }
                 }
             });
         }
+    };
+    // Update chart for cardio mode
+    // Update chart for cardio mode
+    // Update chart for cardio mode
+    const updateCardioChart = () => {
+        console.log("Updating cardio chart with metric type:", metricType);
+
+        const chartContext = chartRef.current?.getContext('2d');
+        if (!chartContext) return;
+
+        // Create a dataset for cardio data
+        const datasets = [];
+        const hasData = Object.keys(cardioWorkouts).length > 0;
+
+        // Process cardio data for selected activities
+        if (hasData) {
+            selectedCardioActivities.forEach(exerciseId => {
+                const exercise = cardioExercises[exerciseId];
+                if (!exercise) return;
+
+                const dataPoints = [];
+
+                Object.keys(cardioWorkouts).forEach(dateKey => {
+                    const dayWorkouts = cardioWorkouts[dateKey];
+                    if (!dayWorkouts[exerciseId]) return;
+
+                    // FIX: Process ALL sessions, not just the first one
+                    const sessions = dayWorkouts[exerciseId].sessions;
+
+                    sessions.forEach((session, sessionIndex) => {
+                        if (!session) return;
+
+                        // Create datapoint based on metric type
+                        const dataPoint = {
+                            x: new Date(
+                                parseInt(dateKey.substring(0, 4)),    // Year
+                                parseInt(dateKey.substring(4, 6)) - 1, // Month (0-based)
+                                parseInt(dateKey.substring(6, 8))     // Day
+                            ).getTime(),
+                            // Y value depends on metric type
+                            y: metricType === 'distance'
+                                ? session.distance  // Use distance as Y for distance mode
+                                : parsePaceString(session.speed.pace), // Use pace for speed mode
+                            r: metricType === 'distance'
+                                ? calculateRadiusFromSpeed(session.speed.mph) // Radius from speed in distance mode
+                                : calculateRadiusFromDistance(session.distance), // Radius from distance in pace mode
+                            exercise: exercise.name,
+                            distance: session.distance,
+                            pace: session.speed.pace,
+                            mph: session.speed.mph,
+                            time: `${session.time.minutes}:${session.time.seconds.toString().padStart(2, '0')}`,
+                            exerciseId,
+                            sessionIndex: sessionIndex, // Add session index to distinguish multiple sessions
+                            dateKey: dateKey
+                        };
+
+                        dataPoints.push(dataPoint);
+                    });
+                });
+
+                // Add dataset for this exercise - MODIFIED TO ENSURE CORRECT STYLES
+                if (dataPoints.length > 0) {
+                    datasets.push({
+                        label: exercise.name,
+                        data: dataPoints,
+                        backgroundColor: exercise.backgroundColor,
+                        borderColor: exercise.borderColor,
+                        pointStyle: exercise.pointStyle,
+                        borderWidth: 1
+                    });
+                }
+            });
+        }
+
+        // Create chart data
+        const chartData = { datasets };
+
+        // Create or update chart
+        if (chartInstance.current) {
+            // Update data
+            chartInstance.current.data = chartData;
+
+            // Hide legend and display no data message if no data
+            if (!hasData) {
+                chartInstance.current.options.plugins.legend.display = false;
+                chartInstance.current.options.plugins.title = {
+                    display: true,
+                    text: 'No cardio data for this month',
+                    color: '#888',
+                    font: { size: 16 }
+                };
+            } else {
+                chartInstance.current.options.plugins.legend.display = true;
+                chartInstance.current.options.plugins.title = { display: false };
+            }
+
+            // Update Y axis title based on metric type
+            chartInstance.current.options.scales.y.title.text =
+                metricType === 'distance' ? 'Distance (miles)' : 'Pace (min/mile)';
+
+            // *** FIX: Correct Y-axis scaling ***
+            // Set rigid min/max values and prevent auto-scaling
+            if (metricType === 'distance') {
+                // Distance mode: 0-14 miles
+                chartInstance.current.options.scales.y.min = 0;
+                chartInstance.current.options.scales.y.max = 14;
+                chartInstance.current.options.scales.y.ticks.stepSize = 1;
+                chartInstance.current.options.scales.y.reverse = false;
+            } else {
+                // Pace mode: 6:00-20:00 min/mile
+                chartInstance.current.options.scales.y.min = 4;
+                chartInstance.current.options.scales.y.max = 30;
+                chartInstance.current.options.scales.y.ticks.stepSize = 2;
+                chartInstance.current.options.scales.y.reverse = true;
+            }
+
+            // Critical fix: Disable auto-scaling completely
+            chartInstance.current.options.scales.y.bounds = 'data';
+            chartInstance.current.options.scales.y.grace = 0;
+            delete chartInstance.current.options.scales.y.beginAtZero; // Remove this to prevent auto-adjustment
+            delete chartInstance.current.options.scales.y.afterBuildTicks; // Remove this function from strength chart
+
+            // Force Chart.js to respect our exact min/max values
+            chartInstance.current.options.scales.y.ticks.precision = 0;
+
+            // Update tick display format
+            chartInstance.current.options.scales.y.ticks.callback = function (value) {
+                if (metricType === 'distance') {
+                    return `${value} mi`; // Add "mi" suffix to distance values
+                } else {
+                    // Format pace ticks as min:sec
+                    return `${Math.floor(value)}:00`;
+                }
+            };
+
+            // Update tooltip
+            chartInstance.current.options.plugins.tooltip.callbacks = createCardioTooltipCallback();
+
+            // Apply changes
+            chartInstance.current.update({ duration: 0 }); // Force immediate update with no animation
+        } else {
+            // ... rest of the chart creation code remains the same ...
+        }
+    };
+
+    // Helper function to parse pace string (e.g., "8:30") to decimal value
+    const parsePaceString = (paceString) => {
+        if (!paceString) return 0;
+        const [minutes, seconds] = paceString.split(':').map(num => parseInt(num, 10));
+        return minutes + (seconds / 60);
+    };
+
+    // Calculate radius based on mph for distance mode
+    const calculateRadiusFromSpeed = (mph) => {
+        if (!mph) return 1;
+        // Faster = bigger bubble
+        return Math.min(20, Math.max(2.5 + mph / 2.5));
+    };
+
+    // Calculate radius based on distance for pace mode
+    const calculateRadiusFromDistance = (distance) => {
+        if (!distance) return 1;
+        // Longer distance = bigger bubble
+        return Math.min(20, Math.max(2 + distance / 2));
+    };
+
+    // Create tooltip callback for cardio mode
+    const createCardioTooltipCallback = () => {
+        return {
+            label: function (context) {
+                const raw = context.raw;
+                if (!raw) return [];
+
+                return [
+                    raw.exercise,
+                    `Distance: ${raw.distance} miles`,
+                    `Pace: ${raw.pace} min/mile`,
+                    `Time: ${raw.time}`,
+                ];
+            }
+        };
     };
 
     const createTooltipCallback = () => {
@@ -1022,6 +1583,31 @@ const WorkoutChart = () => {
                 setDateRange={setDateRange}
             />
 
+            {/* Mode Toggle Button */}
+            <button
+                className="mode-toggle-button"
+                onClick={() => { setMode(mode === 'strength' ? 'cardio' : 'strength'); chartInstance.current.options.scales.y.reverse = false; }}
+            >
+                {mode === 'strength' ? 'Cardio' : 'Strength'}
+            </button>
+            {/* Metric Toggle - only visible in cardio mode */}
+            {mode === 'cardio' && (
+                <div className="metric-toggle">
+                    <button
+                        className={`metric-toggle-button ${metricType === 'distance' ? 'active' : ''}`}
+                        onClick={() => setMetricType('distance')}
+                    >
+                        Distance
+                    </button>
+                    <button
+                        className={`metric-toggle-button ${metricType === 'speed' ? 'active' : ''}`}
+                        onClick={() => setMetricType('speed')}
+                    >
+                        Pace
+                    </button>
+                </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {/* Title Area for Month and Year */}
                 <div style={{
@@ -1029,6 +1615,7 @@ const WorkoutChart = () => {
                     borderRadius: '6px 6px 0 0'
                 }}>
                     <h2 style={{
+                        paddingTop: '2vh',
                         margin: 0,
                         color: '#C58AF9',
                         fontWeight: 'bold',
@@ -1066,59 +1653,156 @@ const WorkoutChart = () => {
                 </div>
 
                 {/* Scrollable area for activities */}
+                {/* Scrollable area for activities */}
                 <div className="filters-panel">
-                    {/* Render filtered activities */}
-                    {/* Render filtered activities */}
-                    {displayedActivities.map(activity => {
-                        const exercise = exercises[activity.id];
-                        const iconPath = exercise ? getExerciseIconPath(exercise) : null;
+                    {mode === 'strength' ? (
+                        // Strength mode activities
+                        displayedActivities.map(activity => {
+                            const exercise = exercises[activity.id];
+                            const iconPath = exercise ? getExerciseIconPath(exercise) : null;
 
-                        return (
-                            <div key={activity.id} className="activity-filter">
-                                <div className="checkbox-container">
-                                    <input
-                                        type="checkbox"
-                                        id={`checkbox-${activity.id}`}
-                                        checked={activity.selected}
-                                        onChange={() => handleActivityToggle(activity.id)}
-                                        className="checkbox"
-                                    />
-                                    {iconPath && (
-                                        <img
-                                            style={{ paddingLeft: '4px' }}
-                                            src={iconPath}
-                                            alt=""
-                                            className="exercise-icon"
-                                            width="16"
-                                            height="16"
+                            return (
+                                <div key={activity.id} className="activity-filter">
+                                    <div className="checkbox-container">
+                                        <input
+                                            type="checkbox"
+                                            id={`checkbox-${activity.id}`}
+                                            checked={activity.selected}
+                                            onChange={() => handleActivityToggle(activity.id)}
+                                            className="checkbox"
                                         />
-                                    )}
-                                    <label
-                                        htmlFor={`checkbox-${activity.id}`}
-                                        className="checkbox-label"
-                                    >
-                                        <span
-                                            className="activity-name"
-                                            style={{ color: muscleGroups[activity.muscleGroup]?.color || '#ffffff' }}
+                                        {iconPath && (
+                                            <img
+                                                style={{ paddingLeft: '4px' }}
+                                                src={iconPath}
+                                                alt=""
+                                                className="exercise-icon"
+                                                width="16"
+                                                height="16"
+                                            />
+                                        )}
+                                        <label
+                                            htmlFor={`checkbox-${activity.id}`}
+                                            className="checkbox-label"
                                         >
-                                            {activity.name}
-                                        </span>
-                                    </label>
+                                            <span
+                                                className="activity-name"
+                                                style={{ color: muscleGroups[activity.muscleGroup]?.color || '#ffffff' }}
+                                            >
+                                                {activity.name}
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <button
+                                        className="only-button"
+                                        onClick={() => handleOnlyClick(activity.id)}
+                                    >
+                                        ONLY
+                                    </button>
                                 </div>
-                                <button
-                                    className="only-button"
-                                    onClick={() => handleOnlyClick(activity.id)}
-                                >
-                                    ONLY
-                                </button>
-                            </div>
-                        );
-                    })}
+                            );
+                        })
+                    ) : (
+                        // Cardio mode activities - only show if there's cardio data for this month
+                        // Cardio mode activities - only show if there's cardio data for this month
+                        Object.keys(cardioWorkouts).length > 0 ? (
+                            (() => {
+                                // Define the desired order for cardio exercises
+                                const cardioOrder = ['Elliptical', 'Treadmill', 'Jogging', 'Mission Peak', 'Summit'];
 
-                    {/* Show message when no results */}
-                    {searchTerm && displayedActivities.length === 0 && (
+                                // Get the list of cardio exercises that exist in the current month's workouts
+                                const cardioExercisesInCurrentMonth = new Set();
+                                Object.keys(cardioWorkouts).forEach(dateKey => {
+                                    const exercisesForDate = cardioWorkouts[dateKey];
+                                    Object.keys(exercisesForDate).forEach(exerciseId => {
+                                        cardioExercisesInCurrentMonth.add(exerciseId);
+                                    });
+                                });
+
+                                // Create and sort the cardio activities - ONLY include exercises that exist in current month
+                                const sortedCardioActivities = Object.entries(cardioExercises)
+                                    .filter(([id, exercise]) =>
+                                        cardioExercisesInCurrentMonth.has(id) && // Only show exercises with data this month
+                                        exercise.name.toLowerCase().includes(searchTerm.toLowerCase())
+                                    )
+                                    .sort(([idA, exerciseA], [idB, exerciseB]) => {
+                                        // Sort by predefined order
+                                        const orderA = cardioOrder.indexOf(exerciseA.name);
+                                        const orderB = cardioOrder.indexOf(exerciseB.name);
+
+                                        // If both are in the order list, sort by that order
+                                        if (orderA !== -1 && orderB !== -1) {
+                                            return orderA - orderB;
+                                        }
+
+                                        // If only one is in the order list, it comes first
+                                        if (orderA !== -1) return -1;
+                                        if (orderB !== -1) return 1;
+
+                                        // If neither is in the order list, sort alphabetically
+                                        return exerciseA.name.localeCompare(exerciseB.name);
+                                    });
+
+                                return sortedCardioActivities.map(([id, exercise]) => {
+                                    const iconPath = getCardioIconPath(id);
+
+                                    return (
+                                        <div key={id} className="activity-filter">
+                                            <div className="checkbox-container">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`checkbox-${id}`}
+                                                    checked={selectedCardioActivities.includes(id)}
+                                                    onChange={() => handleActivityToggle(id)}
+                                                    className="checkbox"
+                                                />
+                                                {iconPath && (
+                                                    <img
+                                                        style={{ paddingLeft: '4px' }}
+                                                        src={iconPath}
+                                                        alt=""
+                                                        className="exercise-icon"
+                                                        width="16"
+                                                        height="16"
+                                                    />
+                                                )}
+                                                <label
+                                                    htmlFor={`checkbox-${id}`}
+                                                    className="checkbox-label"
+                                                >
+                                                    <span
+                                                        className="activity-name"
+                                                        style={{ color: "#cadcfd" }}
+                                                    >
+                                                        {exercise.name}
+                                                    </span>
+                                                </label>
+                                            </div>
+                                            <button
+                                                className="only-button"
+                                                onClick={() => handleOnlyClick(id)}
+                                            >
+                                                ONLY
+                                            </button>
+                                        </div>
+                                    );
+                                });
+                            })()
+                        ) : (
+                            // No cardio data for this month - don't show any filters
+                            <div className="no-results"></div>
+                        )
+                    )}
+
+                    {/* Show message when no results from search */}
+                    {searchTerm && displayedActivities.length === 0 && mode === 'strength' && (
                         <div className="no-results">No exercises match your search</div>
                     )}
+                    {searchTerm && Object.entries(cardioExercises).filter(([id, exercise]) =>
+                        exercise.name.toLowerCase().includes(searchTerm.toLowerCase())
+                    ).length === 0 && mode === 'cardio' && Object.keys(cardioWorkouts).length > 0 && (
+                            <div className="no-results">No cardio activities match your search</div>
+                        )}
                 </div>
             </div>
         </div>

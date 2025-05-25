@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=0.5, user-scalable=yes" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Workout Tracker App" />
     <title>Workout Tracker</title>
@@ -11,24 +11,14 @@
         height: 100%;
         margin: 0;
         padding: 0;
-        touch-action: manipulation;
-        -webkit-text-size-adjust: 100%;
-        overscroll-behavior: none;
+        /* Allow all touch interactions including zoom */
+        touch-action: auto;
+        /* Allow text size adjustment */
+        -webkit-text-size-adjust: auto;
+        /* Allow scroll behaviors */
+        overscroll-behavior: auto;
       }
     </style>
-    <script>
-      // Prevent zooming on iOS devices
-      document.addEventListener('gesturestart', function(e) {
-        e.preventDefault();
-      });
-      
-      // Block pinch-zoom
-      document.addEventListener('touchmove', function(e) {
-        if (e.scale !== 1) {
-          e.preventDefault();
-        }
-      }, { passive: false });
-    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

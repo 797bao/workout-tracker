@@ -32,10 +32,10 @@ html, body, #root, .app, .app-content {
   width: 100%;
   margin: 0;
   padding: 0;
-  touch-action: manipulation;
-  -ms-touch-action: manipulation;
-  -webkit-text-size-adjust: 100%;
-  overscroll-behavior: none;
+  /* Remove overflow: hidden to allow zooming */
+  touch-action: pan-x pan-y pinch-zoom; /* Allow panning and pinch-zoom */
+  -webkit-text-size-adjust: none; /* Allow text zoom */
+  overscroll-behavior: contain; /* Changed from none to contain */
 }
 
 /* If you need scrolling in specific areas, add it there: */

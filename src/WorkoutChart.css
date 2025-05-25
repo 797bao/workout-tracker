@@ -1,16 +1,21 @@
 /* WorkoutChart.css */
 
 html, body {
-  touch-action: manipulation; /* Prevents additional touch behaviors */
-  -ms-touch-action: manipulation;
-  -webkit-text-size-adjust: 100%; /* Prevents text zoom on iOS */
-  overscroll-behavior: none; /* Prevents bouncing effects on some browsers */
+  touch-action: pan-x pan-y pinch-zoom; /* Allow panning and pinch-zoom */
+  -ms-touch-action: pan-x pan-y pinch-zoom;
+  -webkit-text-size-adjust: none; /* Allow text zoom instead of preventing it */
+  overscroll-behavior: contain; /* Changed from none to contain */
 }
 
 
 .date-range {
   align-items: center;
   margin-bottom: 5px;
+}
+
+.chart-container, .filters-panel, .date-sidebar {
+  overflow-y: auto;
+  touch-action: pan-y; /* Only allow vertical panning in these areas */
 }
 
 .chart-container {
@@ -47,13 +52,16 @@ html, body {
 
 /* Activity filter styling */
 .filters-panel {
+  min-width: 172.2px;
   padding-top: 5px;
- 
   border-radius: 5px;
   margin-left: 10px;
-  width: 14vw;
-  max-height: 500px;
+  width: 100%;
+  min-height: 82svh; /* Safe viewport height */
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #222;
 }
 
 .activity-filter {
@@ -115,6 +123,7 @@ html, body {
 }
 
 .search-input {
+  min-width: 172.2px;
   width: 95%;
   padding: 12px 12px;
   border-radius: 4px;
@@ -153,19 +162,24 @@ html, body {
   display: flex;
   flex-direction: column;
   border-radius: 5px;
-  padding-top: 4vh;
-  width: 13.5vw;
+  padding-top: 4svh; /* Safe viewport height */
+  min-width: 172.2px;
+  width: 14vw;
+  min-width: 14vw;
+  max-width: 14vw;
 }
 
 /* Activity filter styling */
 .filters-panel {
-  min-height: 820px; /* Adjust as needed */
+  padding-top: 5px;
+  border-radius: 5px;
+  margin-left: 10px;
+  width: 100%; /* Take full width of container */
+
   overflow-y: auto;
   overflow-x: hidden;
-
-  /* Custom scrollbar styling */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: #444 #222; /* Firefox: thumb and track color */
+  scrollbar-width: thin;
+  scrollbar-color: #444 #222;
 }
 
 /* Webkit browsers (Chrome, Safari, Edge) scrollbar styling */
@@ -307,18 +321,21 @@ html, body {
 }
 
 .date-sidebar {
+  min-width: 98.4px;
   background-color: #2C2F38;
-  width: 130px;
+  width: 8vw;
   border-radius: 4px;
   overflow: hidden;
   margin-right: 4px;
-  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile browser UI */
+  height: 100svh; /* Safe viewport height - even better for mobile */
   color: #e0e0e0;
   font-size: 14px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #444 #222;
 }
+
 
 .date-sidebar::-webkit-scrollbar {
   width: 3px;
@@ -412,13 +429,23 @@ html, body {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  width: 100%;
+  width: 100svw; /* Safe viewport width */
+  min-width: 100svw;
+  max-width: 100svw;
 }
 
 .chart-and-controls {
   display: flex;
   flex-direction: column;
   flex: 1;
+}
+
+.chart-container {
+  border-radius: 8px;
+  height: 90svh; /* Safe viewport height */
+  width: calc(100svw - 8vw - 16vw - 20px); /* Safe viewport width */
+  min-width: calc(100svw - 8vw - 16vw - 20px);
+  max-width: calc(100svw - 8vw - 16vw - 20px);
 }
 
 .mode-toggle-button {

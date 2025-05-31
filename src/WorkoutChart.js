@@ -1396,6 +1396,7 @@ const WorkoutChart = () => {
                             distance: session.distance,
                             pace: session.speed.pace,
                             mph: session.speed.mph,
+                            resistance: session.resistance || '', // Include resistance if available
                             time: `${session.time.minutes}:${session.time.seconds.toString().padStart(2, '0')}`,
                             exerciseId,
                             sessionIndex: sessionIndex, // Add session index to distinguish multiple sessions
@@ -1519,12 +1520,19 @@ const WorkoutChart = () => {
                 const raw = context.raw;
                 if (!raw) return [];
 
-                return [
+                const tooltipLines = [
                     raw.exercise,
                     `Distance: ${raw.distance} miles`,
                     `Pace: ${raw.pace} min/mile`,
                     `Time: ${raw.time}`,
                 ];
+
+                // Only add resistance line if it exists
+                if (raw.resistance) {
+                    tooltipLines.push(`Resistance: ${raw.resistance}`);
+                }
+
+                return tooltipLines;
             }
         };
     };

@@ -1543,13 +1543,37 @@ const WorkoutChart = () => {
                 const raw = context.raw;
                 if (!raw) return [];
 
+                // Check if this is the "Hangs" exercise
+                const isHangs = raw.workout === "Hangs";
+
                 // Build tooltip content that shows combined sets
-                const lines = [
-                    raw.workout,
-                    `Weight: ${raw.weight}lbs`,
-                    `Total Reps: ${raw.totalReps}`,
-                    `Reps: ${raw.reps.join(', ')}`
-                ];
+                const lines = [raw.workout];
+
+                // Add weight line (only if weight > 0 for Hangs, or always for other exercises)
+                if (!isHangs || raw.weight > 0) {
+                    lines.push(`Weight: ${raw.weight}lbs`);
+                }
+
+                if (isHangs) {
+                    // For Hangs: show time instead of reps
+                    // Convert total reps (seconds) to minutes and seconds
+                    const totalSeconds = raw.totalReps;
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    const totalTimeStr = minutes > 0 
+                        ? `${minutes}m ${seconds}s` 
+                        : `${seconds}s`;
+
+                    lines.push(`Total Time: ${totalTimeStr}`);
+                    
+                    // Format individual reps as time (e.g., "30s, 40s")
+                    const timeValues = raw.reps.map(rep => `${rep}s`).join(', ');
+                    lines.push(`Time: ${timeValues}`);
+                } else {
+                    // For other exercises: show reps normally
+                    lines.push(`Total Reps: ${raw.totalReps}`);
+                    lines.push(`Reps: ${raw.reps.join(', ')}`);
+                }
 
                 if (raw.notes) {
                     lines.push(`Notes: ${raw.notes}`);

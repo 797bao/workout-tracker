@@ -37,6 +37,7 @@ async function initializeExerciseData() {
         "Chin Ups": "rectRot",
         "Nordic Curls": "triangle",
         "Sit Ups": "triangle",
+        "Hangs": "rect",
 
         "Dumbbell Flat Bench": "circle",
         "Dumbbell Incline Bench": "circle",
@@ -95,6 +96,7 @@ async function initializeExerciseData() {
         "Hamstring Curls": "triangle",
         "Leg Extensions": "rect",
         "Leg Raises": "rect",
+        "RDL": "rectRounded",
 
         "Tib Raises": "circle",
         "Hip Abductor Raises": "triangle",
@@ -111,6 +113,7 @@ async function initializeExerciseData() {
         "Chin Ups": "#b5a4da",
         "Nordic Curls": "#b5a4da",
         "Sit Ups": "#b5a4da",
+        "Hangs": "#b5a4da",
 
         "Dumbbell Flat Bench": "#f44336",
         "Dumbbell Incline Bench": "#f44336",
@@ -169,6 +172,7 @@ async function initializeExerciseData() {
         "Hamstring Curls": "#6d9eeb",
         "Leg Extensions": "#6d9eeb",
         "Leg Raises": "#6d9eeb",
+                "RDL": "#6d9eeb",
 
         "Tib Raises": "#cadcfd",
         "Hip Abductor Raises": "#cadcfd",
@@ -185,6 +189,7 @@ async function initializeExerciseData() {
         "Chin Ups": "#000000",
         "Nordic Curls": "#b5a4da",
         "Sit Ups": "#000000",
+        "Hangs": "#b5a4da",
 
         "Dumbbell Flat Bench": "#f44336",
         "Dumbbell Incline Bench": "#000000",
@@ -243,6 +248,7 @@ async function initializeExerciseData() {
         "Hamstring Curls": "#000000",
         "Leg Extensions": "#6d9eeb",
         "Leg Raises": "#000000",
+                "RDL": "#6d9eeb",
 
         "Tib Raises": "#cadcfd",
         "Hip Abductor Raises": "#cadcfd",
@@ -267,7 +273,7 @@ async function initializeExerciseData() {
     const exerciseGroups = {};
     
     // Calisthenics exercises
-    ["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups"].forEach(exercise => {
+    ["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups", "Hangs"].forEach(exercise => {
         exerciseGroups[exercise] = "Calisthenics";
     });
     
@@ -301,7 +307,7 @@ async function initializeExerciseData() {
     
     // Upper Legs exercises
     ["Squats", "Hip Thrusts", "Bulgarian Split Squats", "Lunges", "Glute Kickbacks", 
-     "Hamstring Curls", "Leg Extensions", "Leg Raises"].forEach(exercise => {
+     "Hamstring Curls", "Leg Extensions", "Leg Raises", "RDL"].forEach(exercise => {
         exerciseGroups[exercise] = "Upper Legs";
     });
     

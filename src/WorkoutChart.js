@@ -1458,7 +1458,7 @@ const WorkoutChart = () => {
             } else {
                 // Pace mode: 6:00-20:00 min/mile
                 chartInstance.current.options.scales.y.min = 4;
-                chartInstance.current.options.scales.y.max = 30;
+                chartInstance.current.options.scales.y.max = 32;
                 chartInstance.current.options.scales.y.ticks.stepSize = 2;
                 chartInstance.current.options.scales.y.reverse = true;
             }

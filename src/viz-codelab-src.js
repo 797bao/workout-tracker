@@ -26,6 +26,7 @@ function drawViz(vizData) {
         "Chin Ups": "rectRot",
         "Nordic Curls": "triangle",
         "Sit Ups": "triangle",
+        "Hangs": "rect",
 
         "Dumbell Flat Bench": "circle",
         "Dumbell Incline Bench": "circle",
@@ -77,9 +78,6 @@ function drawViz(vizData) {
         "Wrist Rollers": "crossRot",
 
 
-
-
-
         "Squats": "circle",
         "Hip Thrusts": "circle",
         "Bulgarian Split Squats": "rectRot",
@@ -88,6 +86,7 @@ function drawViz(vizData) {
         "Hamstring Curls": "triangle",
         "Leg Extensions": "rect",
         "Leg Raises": "rect",
+        "RDL": "rectRounded",
 
         "Tib Raises": "circle",
         "Hip Abductor Raises": "triangle",
@@ -104,6 +103,7 @@ function drawViz(vizData) {
         "Chin Ups": "#b5a4da",
         "Nordic Curls": "#b5a4da",
         "Sit Ups": "#b5a4da",
+        "Hangs":  "#b5a4da",
 
         "Dumbell Flat Bench": "#f44336",
         "Dumbell Incline Bench": "#f44336",
@@ -162,6 +162,7 @@ function drawViz(vizData) {
         "Hamstring Curls": "#6d9eeb",
         "Leg Extensions": "#6d9eeb",
         "Leg Raises": "#6d9eeb",
+        "RDL": "#6d9eeb",
 
         "Tib Raises": "#cadcfd",
         "Hip Abductor Raises": "#cadcfd",
@@ -179,6 +180,7 @@ function drawViz(vizData) {
         "Chin Ups": "#000000",
         "Nordic Curls": "#b5a4da",
         "Sit Ups": "#000000",
+              "Hangs": "#b5a4da",
 
         "Dumbell Flat Bench": "#f44336",
         "Dumbell Incline Bench": "#000000",
@@ -237,6 +239,7 @@ function drawViz(vizData) {
         "Hamstring Curls": "#000000",
         "Leg Extensions": "#6d9eeb",
         "Leg Raises": "#000000",
+        "RDL": "#6d9eeb",
 
         "Tib Raises": "#cadcfd",
         "Hip Abductor Raises": "#cadcfd",
@@ -276,7 +279,7 @@ function drawViz(vizData) {
     };
 
     let labelColors = ['#b4a4da', '#f44336', '#ea9999', '#ffad3f', '#93c47d', '#6c9eeb', '#cadcfd'];
-    const CalisthenicsList = new Set(["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups"]);
+    const CalisthenicsList = new Set(["Dips", "Push Ups", "Hangs", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups"]);
 
     entries.forEach(entry => {
         //check entry if logged this column must be stats column

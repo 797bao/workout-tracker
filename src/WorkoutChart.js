@@ -160,7 +160,7 @@ const WorkoutChart = () => {
 
     const [selectedGroups, setSelectedGroups] = useState(Object.keys(muscleGroups));
     const labelColors = ['#b4a4da', '#f44336', '#ea9999', '#ffad3f', '#93c47d', '#6c9eeb', '#cadcfd'];
-    const CalisthenicsList = new Set(["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups"]);
+    const CalisthenicsList = new Set(["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups", "Hangs"]);
 
     const [filteredActivities, setFilteredActivities] = useState([]);
     const [selectedActivities, setSelectedActivities] = useState([]);

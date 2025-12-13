@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/workout-tracker/static/css/main.01f732b2.css",
-    "main.js": "/workout-tracker/static/js/main.f718cd46.js",
+    "main.js": "/workout-tracker/static/js/main.64f329ff.js",
     "index.html": "/workout-tracker/index.html",
     "main.01f732b2.css.map": "/workout-tracker/static/css/main.01f732b2.css.map",
-    "main.f718cd46.js.map": "/workout-tracker/static/js/main.f718cd46.js.map"
+    "main.64f329ff.js.map": "/workout-tracker/static/js/main.64f329ff.js.map"
   },
   "entrypoints": [
     "static/css/main.01f732b2.css",
-    "static/js/main.f718cd46.js"
+    "static/js/main.64f329ff.js"
   ]
 }

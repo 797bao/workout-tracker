@@ -1,4 +1,5 @@
-// WorkoutChart.js
+// WorkoutChart.js — strength + cardio bubble chart, with mobile portrait redesign
+// (hamburger drawer, locked y-axis, horizontally scrollable wide chart, compact legend).
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Chart, registerables } from 'chart.js';
 import 'chartjs-adapter-date-fns';
@@ -11,16 +12,18 @@ import { set } from 'date-fns';
 Chart.register(...registerables);
 
 
-// Firebase configuration
+// Firebase configuration — values come from REACT_APP_* env vars.
+// Local dev: set them in .env.local (gitignored).
+// Production (GitHub Pages): inject via GitHub Actions secrets at build time.
 const firebaseConfig = {
-    apiKey: "AIzaSyCLOgmLbTZxtbV2YpjfjwBPI0rhJ_9OJr8",
-    authDomain: "level-tracker-f67f6.firebaseapp.com",
-    databaseURL: "https://level-tracker-f67f6-default-rtdb.firebaseio.com",
-    projectId: "level-tracker-f67f6",
-    storageBucket: "level-tracker-f67f6.appspot.com",
-    messagingSenderId: "121770062751",
-    appId: "1:121770062751:web:eb68d1e10a97ecb09c03aa",
-    measurementId: "G-HBPPGTG7E2"
+    apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+    databaseURL: process.env.REACT_APP_FIREBASE_DATABASE_URL,
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.REACT_APP_FIREBASE_APP_ID,
+    measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
@@ -30,7 +33,7 @@ let today = new Date();
 let currentDay = today.getDate().toString();
 let isCurrentMonth;
 
-const DateSidebar = ({ dateRange, setDateRange }) => {
+const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose }) => {
 
 
     // Get current date to highlight active month
@@ -74,8 +77,14 @@ const DateSidebar = ({ dateRange, setDateRange }) => {
     // Generate years from 2024 to 2030
     const years = ['2024', '2025', '2026', '2027', '2028', '2029', '2030'];
 
+    // Wrap the original month-select handler to also close the drawer on mobile
+    const handleMonthSelectAndClose = (year, monthIndex) => {
+        handleMonthSelect(year, monthIndex);
+        if (onClose) onClose();
+    };
+
     return (
-        <div className="date-sidebar">
+        <div className={`date-sidebar ${isOpen ? 'drawer-open' : ''}`}>
             {years.map(year => (
                 <div key={year} className="year-section">
                     <div
@@ -102,7 +111,7 @@ const DateSidebar = ({ dateRange, setDateRange }) => {
                                         <div
                                             key={monthIndex}
                                             className={`month-item ${isActive ? 'active' : ''}`}
-                                            onClick={() => handleMonthSelect(year, monthIndex)}
+                                            onClick={() => handleMonthSelectAndClose(year, monthIndex)}
                                         >
                                             {getMonthName(monthIndex)}
                                         </div>
@@ -122,6 +131,9 @@ const WorkoutChart = () => {
     const chartRef = useRef(null);
     const chartInstance = useRef(null);
 
+    // Mobile: locked y-axis labels (rendered as plain HTML next to the scrollable main chart)
+    const [yAxisLabels, setYAxisLabels] = useState([]);
+
     // State variables
     const [mode, setMode] = useState('strength'); // 'workout' or 'cardio'
     const [metricType, setMetricType] = useState('distance');
@@ -129,6 +141,94 @@ const WorkoutChart = () => {
     const [workouts, setWorkouts] = useState({});   //list of workouts pulled from firebase
     const lastToggleActivityRef = useRef(null);
     const [searchTerm, setSearchTerm] = useState('');
+
+    // Mobile drawer state
+    const [isDateDrawerOpen, setIsDateDrawerOpen] = useState(false);
+    const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+    const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
+    const closeAllDrawers = () => {
+        setIsDateDrawerOpen(false);
+        setIsFilterDrawerOpen(false);
+        setIsMonthDropdownOpen(false);
+    };
+
+    // Month list for the title-tap dropdown — most recent first, down to the
+    // earliest month we have data for (Aug 2024).
+    const monthDropdownOptions = useMemo(() => {
+        const options = [];
+        const today = new Date();
+        let year = today.getFullYear();
+        let month = today.getMonth();
+        while (year > 2024 || (year === 2024 && month >= 7)) {
+            options.push({ year, month });
+            if (month === 0) { month = 11; year--; } else { month--; }
+        }
+        return options;
+    }, []);
+
+    // Track viewport so chart options (legend, y-axis labels) can adapt
+    const [isMobileView, setIsMobileView] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        return window.matchMedia('(max-width: 820px)').matches;
+    });
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const mq = window.matchMedia('(max-width: 820px)');
+        const handler = (e) => setIsMobileView(e.matches);
+        if (mq.addEventListener) mq.addEventListener('change', handler);
+        else mq.addListener(handler);
+        return () => {
+            if (mq.removeEventListener) mq.removeEventListener('change', handler);
+            else mq.removeListener(handler);
+        };
+    }, []);
+
+    // When the viewport crosses the mobile/desktop boundary, the chart needs different
+    // creation-time options (y-axis labels, title, legend visibility). Destroy so the
+    // next updateChart() recreates with the correct options.
+    const lastIsMobileViewRef = useRef(isMobileView);
+    useEffect(() => {
+        if (lastIsMobileViewRef.current !== isMobileView) {
+            if (chartInstance.current) {
+                chartInstance.current.destroy();
+                chartInstance.current = null;
+            }
+            lastIsMobileViewRef.current = isMobileView;
+        }
+    }, [isMobileView]);
+
+    // Reflow the locked y-axis labels when the window resizes (chart redraws cause refresh too)
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const handler = () => {
+            if (typeof requestAnimationFrame !== 'undefined') {
+                requestAnimationFrame(() => {
+                    if (!chartInstance.current) return;
+                    const yScale = chartInstance.current.scales?.y;
+                    if (!yScale || !yScale.ticks) return;
+                    const cb = yScale.options?.ticks?.callback;
+                    const next = yScale.ticks.map((t, i) => {
+                        let label;
+                        try {
+                            label = cb ? cb.call(yScale, t.value, i, yScale.ticks) : String(t.value);
+                        } catch (_) { label = String(t.value); }
+                        if (Array.isArray(label)) label = label[0];
+                        if (label === '' || label == null) return null;
+                        const pixel = yScale.getPixelForValue(t.value);
+                        if (!Number.isFinite(pixel)) return null;
+                        return { value: t.value, label: String(label), pixel };
+                    }).filter(Boolean);
+                    setYAxisLabels(next);
+                });
+            }
+        };
+        window.addEventListener('resize', handler);
+        window.addEventListener('orientationchange', handler);
+        return () => {
+            window.removeEventListener('resize', handler);
+            window.removeEventListener('orientationchange', handler);
+        };
+    }, []);
 
     const [cardioExercises, setCardioExercises] = useState({});
     const [cardioWorkouts, setCardioWorkouts] = useState({});
@@ -291,7 +391,8 @@ const WorkoutChart = () => {
         selectedCardioActivities,
         selectedGroups,
         mode,
-        metricType
+        metricType,
+        isMobileView
     ]);
 
 
@@ -717,6 +818,74 @@ const WorkoutChart = () => {
         return `${process.env.PUBLIC_URL}/icons/${safeFile}`;
     };
 
+    // ----- Mobile locked y-axis (rendered as positioned HTML, not a second Chart instance) -----
+    // Reads tick value/label/pixel directly from the main chart's resolved y-scale and
+    // renders them in a fixed-width column next to the horizontally-scrolling chart.
+    const refreshYAxisLabels = () => {
+        if (!chartInstance.current) return;
+        const yScale = chartInstance.current.scales?.y;
+        if (!yScale || !yScale.ticks) return;
+
+        const cb = yScale.options?.ticks?.callback;
+        const next = yScale.ticks.map((t, i) => {
+            let label;
+            try {
+                label = cb ? cb.call(yScale, t.value, i, yScale.ticks) : String(t.value);
+            } catch (_) {
+                label = String(t.value);
+            }
+            if (Array.isArray(label)) label = label[0];
+            if (label === '' || label == null) return null;
+            const pixel = yScale.getPixelForValue(t.value);
+            if (!Number.isFinite(pixel)) return null;
+            return { value: t.value, label: String(label), pixel };
+        }).filter(Boolean);
+
+        setYAxisLabels(next);
+    };
+
+    // Tap a colored dot in the compact mobile legend (mirrors desktop legend onClick semantics)
+    const handleMobileLegendClick = (clickedGroup) => {
+        let newGroups;
+        const allGroups = Object.keys(muscleGroups);
+        if (selectedGroups.length === 1 && selectedGroups[0] === clickedGroup) {
+            newGroups = allGroups;
+            lastToggleActivityRef.current = null;
+        } else if (selectedGroups.length === allGroups.length) {
+            newGroups = [clickedGroup];
+            lastToggleActivityRef.current = clickedGroup;
+        } else if (selectedGroups.includes(clickedGroup)) {
+            newGroups = selectedGroups.filter(g => g !== clickedGroup);
+            if (newGroups.length === 0) newGroups = allGroups;
+        } else {
+            newGroups = [...selectedGroups, clickedGroup];
+        }
+        setSelectedGroups(newGroups);
+
+        // Sync the activity list to match new group selection
+        const exercisesInCurrentMonth = new Set();
+        Object.keys(workouts).forEach(dateKey => {
+            Object.keys(workouts[dateKey]).forEach(exerciseId => {
+                exercisesInCurrentMonth.add(exerciseId);
+            });
+        });
+        const filteredList = Array.from(exercisesInCurrentMonth)
+            .filter(eid => exercises[eid] && newGroups.includes(exercises[eid].muscleGroup))
+            .map(eid => ({
+                id: eid,
+                name: exercises[eid].name,
+                muscleGroup: exercises[eid].muscleGroup,
+                selected: true
+            }));
+        filteredList.sort((a, b) => {
+            const oa = muscleGroups[a.muscleGroup]?.order || 999;
+            const ob = muscleGroups[b.muscleGroup]?.order || 999;
+            return oa !== ob ? oa - ob : a.name.localeCompare(b.name);
+        });
+        setFilteredActivities(filteredList);
+        setSelectedActivities(filteredList.map(a => a.id));
+    };
+
     const updateChart = () => {
         console.log(`updateChart - mode: ${mode}, metricType: ${metricType}`);
 
@@ -734,6 +903,14 @@ const WorkoutChart = () => {
             updateStrengthChart();
         } else {
             updateCardioChart();
+        }
+
+        // After the main chart's options/data are set, read the resolved y-scale tick
+        // pixel positions for the locked HTML overlay (mobile portrait).
+        if (typeof requestAnimationFrame !== 'undefined') {
+            requestAnimationFrame(refreshYAxisLabels);
+        } else {
+            refreshYAxisLabels();
         }
     };
 
@@ -753,7 +930,7 @@ const WorkoutChart = () => {
             chartInstance.current.options.plugins.legend.display = false;
         } else {
             // Show strength legend items and update visibility based on selectedGroups
-            chartInstance.current.options.plugins.legend.display = true;
+            chartInstance.current.options.plugins.legend.display = !isMobileView;
             chartInstance.current.data.datasets.forEach((dataset, i) => {
                 chartInstance.current.setDatasetVisibility(i, selectedGroups.includes(dataset.label));
             });
@@ -950,8 +1127,8 @@ const WorkoutChart = () => {
                     font: { size: 16 }
                 };
             } else {
-                // Make sure legend is visible when we have data
-                chartInstance.current.options.plugins.legend.display = true;
+                // Make sure legend is visible when we have data (desktop only — on mobile we use the custom dot legend)
+                chartInstance.current.options.plugins.legend.display = !isMobileView;
                 chartInstance.current.options.plugins.title = {
                     display: false
                 };
@@ -1262,11 +1439,12 @@ const WorkoutChart = () => {
                                 axis.max += 5;
                             },
                             title: {
-                                display: true,
+                                display: !isMobileView,
                                 text: 'Weight',
                             },
 
                             ticks: {
+                                display: !isMobileView,
                                 font: {
                                     size: 13
                                 },
@@ -1335,7 +1513,7 @@ const WorkoutChart = () => {
                         },
 
                         legend: {
-                            display: hasData,
+                            display: hasData && !isMobileView,
                             labels: {
                                 font: {
                                     size: 17,
@@ -1439,7 +1617,7 @@ const WorkoutChart = () => {
                     font: { size: 16 }
                 };
             } else {
-                chartInstance.current.options.plugins.legend.display = true;
+                chartInstance.current.options.plugins.legend.display = !isMobileView;
                 chartInstance.current.options.plugins.title = { display: false };
             }
 
@@ -1608,17 +1786,94 @@ const WorkoutChart = () => {
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-start', width: '100%', height: '100%' }}>
+        <>
+            {/* Mobile Top Bar — hidden on desktop via CSS */}
+            <div className="mobile-top-bar">
+                <button
+                    className="hamburger-button"
+                    aria-label="Open date menu"
+                    onClick={() => { setIsDateDrawerOpen(true); setIsFilterDrawerOpen(false); setIsMonthDropdownOpen(false); }}
+                >
+                    <span className="hamburger-icon">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
+                </button>
+                <button
+                    className="mobile-top-bar-title"
+                    aria-label="Pick a month"
+                    aria-expanded={isMonthDropdownOpen}
+                    onClick={() => {
+                        setIsMonthDropdownOpen(prev => !prev);
+                        setIsDateDrawerOpen(false);
+                        setIsFilterDrawerOpen(false);
+                    }}
+                >
+                    <span>
+                        {dateRange.startDate.toLocaleString('default', { month: 'long' })} {dateRange.startDate.getFullYear()}
+                    </span>
+                    <span className={`title-caret ${isMonthDropdownOpen ? 'open' : ''}`}>▾</span>
+                </button>
+                <button
+                    className="mobile-filter-button"
+                    aria-label="Open filters"
+                    onClick={() => { setIsFilterDrawerOpen(true); setIsDateDrawerOpen(false); setIsMonthDropdownOpen(false); }}
+                >
+                    <svg className="filter-icon" viewBox="0 0 24 24">
+                        <path d="M3 5h18M6 12h12M10 19h4" />
+                    </svg>
+                </button>
+            </div>
+
+            {/* Month dropdown — appears under the top bar when the title is tapped */}
+            {isMonthDropdownOpen && (
+                <div className="month-dropdown" role="listbox">
+                    {monthDropdownOptions.map(({ year, month }) => {
+                        const isActive =
+                            year === dateRange.startDate.getFullYear() &&
+                            month === dateRange.startDate.getMonth();
+                        const monthName = new Date(2000, month, 1).toLocaleString('default', { month: 'short' });
+                        return (
+                            <div
+                                key={`${year}-${month}`}
+                                className={`month-dropdown-item ${isActive ? 'active' : ''}`}
+                                role="option"
+                                aria-selected={isActive}
+                                onClick={() => {
+                                    const startDate = new Date(year, month, 1);
+                                    const endDate = new Date(year, month + 1, 0);
+                                    setDateRange({ startDate, endDate });
+                                    setIsMonthDropdownOpen(false);
+                                }}
+                            >
+                                {monthName} {year}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Backdrop for drawers (mobile only — visible only when a drawer is open) */}
+            <div
+                className={`mobile-backdrop ${(isDateDrawerOpen || isFilterDrawerOpen || isMonthDropdownOpen) ? 'visible' : ''}`}
+                onClick={closeAllDrawers}
+            />
+
+            <div className="workout-root" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-start', width: '100%', height: '100%' }}>
             {/* Left: Date Sidebar */}
             <DateSidebar
                 dateRange={dateRange}
                 setDateRange={setDateRange}
+                isOpen={isDateDrawerOpen}
+                onClose={closeAllDrawers}
             />
 
+            <div className="mobile-controls-row">
             {/* Mode Toggle Button */}
             <button
                 className="mode-toggle-button"
-                onClick={() => { setMode(mode === 'strength' ? 'cardio' : 'strength'); chartInstance.current.options.scales.y.reverse = false; }}
+                onClick={() => { setMode(mode === 'strength' ? 'cardio' : 'strength'); if (chartInstance.current) chartInstance.current.options.scales.y.reverse = false; }}
             >
                 {mode === 'strength' ? 'Cardio' : 'Strength'}
             </button>
@@ -1639,10 +1894,33 @@ const WorkoutChart = () => {
                     </button>
                 </div>
             )}
+            {/* Mobile compact legend — colored dots, only in strength mode */}
+            {mode === 'strength' && (
+                <div className="mobile-legend" role="group" aria-label="Filter by muscle group">
+                    {Object.entries(muscleGroups)
+                        .sort(([, a], [, b]) => a.order - b.order)
+                        .map(([name, info]) => {
+                            const isActive = selectedGroups.includes(name);
+                            return (
+                                <button
+                                    key={name}
+                                    type="button"
+                                    className={`mobile-legend-dot ${isActive ? 'active' : 'inactive'}`}
+                                    style={{ backgroundColor: isActive ? info.color : 'transparent', borderColor: info.color }}
+                                    onClick={() => handleMobileLegendClick(name)}
+                                    title={name}
+                                    aria-label={name}
+                                    aria-pressed={isActive}
+                                />
+                            );
+                        })}
+                </div>
+            )}
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {/* Title Area for Month and Year */}
-                <div style={{
+            <div className="chart-and-title" style={{ display: 'flex', flexDirection: 'column' }}>
+                {/* Title Area for Month and Year (desktop only) */}
+                <div className="month-year-title" style={{
                     marginBottom: '8px',
                     borderRadius: '6px 6px 0 0'
                 }}>
@@ -1657,14 +1935,29 @@ const WorkoutChart = () => {
                     </h2>
                 </div>
 
-                {/* Chart Container */}
+                {/* Chart Container — on mobile this becomes a flex row with a locked y-axis on the left and a horizontally scrollable wide chart on the right */}
                 <div className="chart-container">
-                    <canvas ref={chartRef}></canvas>
+                    <div className="y-axis-only" aria-hidden="true">
+                        {yAxisLabels.map((t, i) => (
+                            <div
+                                key={`${t.value}-${i}`}
+                                className="y-axis-tick"
+                                style={{ top: `${t.pixel}px` }}
+                            >
+                                {t.label}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="chart-scroll">
+                        <div className="chart-canvas-wide">
+                            <canvas ref={chartRef}></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Right: Filters Container */}
-            <div className="filters-container">
+            <div className={`filters-container ${isFilterDrawerOpen ? 'drawer-open' : ''}`}>
                 {/* Search input above the scrollable area */}
                 <div className="search-container">
                     <input
@@ -1838,6 +2131,7 @@ const WorkoutChart = () => {
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

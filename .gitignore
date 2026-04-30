@@ -38,6 +38,9 @@ bower_components
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
 
+# Create React App build output (deployed by GitHub Actions, no need to commit)
+/build
+
 # Dependency directories
 node_modules/
 jspm_packages/

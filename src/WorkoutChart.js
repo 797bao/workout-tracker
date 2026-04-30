@@ -1435,11 +1435,11 @@ const WorkoutChart = () => {
                             hoverRadius: isMobileView ? 8 : 4
                         }
                     },
-                    // On mobile, prefer "nearest" point detection with a larger axis tolerance
-                    // so taps near (not exactly on) a bubble still register.
+                    // Keep intersect:true so the tap MUST land within a point's hit area
+                    // (visual radius + hitRadius). Tapping empty space → no tooltip.
                     interaction: {
                         mode: 'nearest',
-                        intersect: !isMobileView,
+                        intersect: true,
                         axis: 'xy'
                     },
                     scales: {

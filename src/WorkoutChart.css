@@ -567,8 +567,7 @@ html, body {
 .mobile-filter-button,
 .mobile-backdrop,
 .drawer-close-button,
-.mobile-legend,
-.month-dropdown {
+.mobile-legend {
   display: none;
 }
 

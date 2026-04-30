@@ -561,13 +561,14 @@ html, body {
    MOBILE / PORTRAIT REDESIGN
    ========================================================== */
 
-/* Hidden on desktop by default */
+/* Hidden on desktop by default — the @media block below re-shows them on mobile */
 .mobile-top-bar,
 .hamburger-button,
 .mobile-filter-button,
 .mobile-backdrop,
 .drawer-close-button,
-.mobile-legend-row {
+.mobile-legend,
+.month-dropdown {
   display: none;
 }
 

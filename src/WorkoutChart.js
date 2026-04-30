@@ -1426,6 +1426,22 @@ const WorkoutChart = () => {
                 {
                     maintainAspectRatio: false,
                     animation: { duration: 100 },
+                    // Fatter invisible tap target on mobile so small bubbles aren't a pain to hit.
+                    // hitRadius adds padding around the visual point for hover/touch detection only —
+                    // the rendered bubble size is unchanged.
+                    elements: {
+                        point: {
+                            hitRadius: isMobileView ? 14 : 4,
+                            hoverRadius: isMobileView ? 8 : 4
+                        }
+                    },
+                    // On mobile, prefer "nearest" point detection with a larger axis tolerance
+                    // so taps near (not exactly on) a bubble still register.
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: !isMobileView,
+                        axis: 'xy'
+                    },
                     scales: {
                         y: {
                             grid: {

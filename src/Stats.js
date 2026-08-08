@@ -305,7 +305,7 @@ const Stats = ({ exercises, cardioExercises }) => {
             const resistances = [...new Set(rows.map((r) => r.resistance).filter((v) => v != null))]
                 .sort((a, b) => a - b);
 
-            const f = cardioFilters[activityId] || { metric: 'distance', duration: 'any', distance: 'any', resistance: 'any' };
+            const f = cardioFilters[activityId] || { metric: 'pace', duration: 'any', distance: 'any', resistance: 'any' };
 
             let filtered = rows;
             if (f.resistance !== 'any') {
@@ -348,7 +348,7 @@ const Stats = ({ exercises, cardioExercises }) => {
     const setCardFilter = (activityId, patch) => {
         setCardioFilters((prev) => ({
             ...prev,
-            [activityId]: { metric: 'distance', duration: 'any', distance: 'any', resistance: 'any', ...(prev[activityId] || {}), ...patch },
+            [activityId]: { metric: 'pace', duration: 'any', distance: 'any', resistance: 'any', ...(prev[activityId] || {}), ...patch },
         }));
     };
 

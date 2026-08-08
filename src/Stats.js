@@ -1,0 +1,570 @@
+// Stats.js — Personal Records page.
+// Answers "what's my best X within time range Y under conditions Z" for both
+// strength and cardio, straight from the full Firebase history (all years).
+import React, { useState, useEffect, useMemo } from 'react';
+import { getDatabase, ref, get } from 'firebase/database';
+import './Stats.css';
+
+// Mirrors the definitions in WorkoutChart.js (kept local so this page is
+// self-contained and can't drift the chart's behavior).
+const MUSCLE_GROUPS = {
+    "Calisthenics": { color: "#b4a4da", order: 1 },
+    "Chest": { color: "#f44336", order: 2 },
+    "Back": { color: "#ea9999", order: 3 },
+    "Delts": { color: "#ffad3f", order: 4 },
+    "Arms": { color: "#93c47d", order: 5 },
+    "Upper Legs": { color: "#6d9eeb", order: 6 },
+    "Lower Legs": { color: "#cadcfd", order: 7 }
+};
+const CALISTHENICS = new Set(["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups", "Hangs"]);
+const CARDIO_ORDER = ['Elliptical', 'Treadmill', 'Jogging', 'Mission Peak', 'Summit'];
+// Hangs are logged in SECONDS (a 60 in the reps field = a 60-second hang).
+const TIMED_EXERCISES = new Set(['Hangs']);
+
+// Icon path builders — same public/icons naming scheme the chart pages use.
+const SHAPE_BY_POINTSTYLE = {
+    triangle: 'Triangle', rectrot: 'RectRot', rect: 'Rect', rectrounded: 'RectRounded',
+    cross: 'Cross', crossrot: 'CrossRot', circle: 'Circle',
+};
+
+function exerciseIconPath(exercise) {
+    if (!exercise || !exercise.muscleGroup) return null;
+    const base = SHAPE_BY_POINTSTYLE[(exercise.pointStyle || 'circle').toLowerCase()] || 'Circle';
+    const needsStroke = exercise.backgroundColor === '#000000' && !['Cross', 'CrossRot'].includes(base);
+    const fileName = `${exercise.muscleGroup}_${base}${needsStroke ? 'Stroke' : ''}.svg`;
+    return `${process.env.PUBLIC_URL}/icons/${encodeURIComponent(fileName)}`;
+}
+
+const GROUP_BY_BORDER_COLOR = {
+    '#b5a4da': 'Calisthenics', '#f44336': 'Chest', '#ea9999': 'Back', '#ffad3f': 'Delts',
+    '#93c47d': 'Arms', '#6d9eeb': 'Upper Legs', '#cadcfd': 'Lower Legs',
+};
+
+function cardioIconPath(exercise) {
+    if (!exercise) return null;
+    const group = GROUP_BY_BORDER_COLOR[exercise.borderColor];
+    if (!group) return null;
+    const base = SHAPE_BY_POINTSTYLE[(exercise.pointStyle || 'circle').toLowerCase()] || 'Circle';
+    const needsStroke = exercise.backgroundColor === '#000000' && !['Cross', 'CrossRot'].includes(base);
+    const fileName = `${group}_${base}${needsStroke ? 'Stroke' : ''}.svg`;
+    return `${process.env.PUBLIC_URL}/icons/${encodeURIComponent(fileName)}`;
+}
+
+const RANGE_OPTIONS = [
+    { id: 'all', label: 'All Time' },
+    { id: 'year', label: 'This Year' },
+    { id: '6m', label: 'Last 6 Months' },
+    { id: '3m', label: 'Last 3 Months' },
+    { id: '30d', label: 'Last 30 Days' },
+    { id: 'custom', label: 'Custom…' },
+];
+
+// Rep-max convention: "≥ 5 reps" = heaviest set with AT LEAST 5 reps (5RM-style).
+const REP_OPTIONS = [
+    { id: 'any', label: 'Any reps' },
+    { id: '3', label: '≥ 3 reps' },
+    { id: '5', label: '≥ 5 reps' },
+    { id: '8', label: '≥ 8 reps' },
+    { id: '10', label: '≥ 10 reps' },
+    { id: '12', label: '≥ 12 reps' },
+    { id: '15', label: '≥ 15 reps' },
+];
+
+const DURATION_BUCKETS = [
+    { id: 'any', label: 'Any time' },
+    { id: '15', label: '~15 min', min: 10, max: 20 },
+    { id: '20', label: '~20 min', min: 15, max: 25 },
+    { id: '30', label: '~30 min', min: 25, max: 35 },
+    { id: '45', label: '~45 min', min: 40, max: 50 },
+    { id: '60', label: '60+ min', min: 55, max: Infinity },
+];
+
+// For "Fastest pace" the natural question is "over WHAT distance" — a sprint
+// pace and a long-run pace aren't comparable. Swaps in for the duration filter.
+const DISTANCE_BUCKETS = [
+    { id: 'any', label: 'Any distance' },
+    { id: '1', label: '~1 mi', min: 0.75, max: 1.25 },
+    { id: '1.5', label: '~1.5 mi', min: 1.25, max: 1.75 },
+    { id: '2', label: '~2 mi', min: 1.75, max: 2.5 },
+    { id: '3', label: '~3 mi', min: 2.5, max: 3.5 },
+    { id: '4.5', label: '~4.5 mi', min: 3.5, max: 5 },
+    { id: '5', label: '5+ mi', min: 5, max: Infinity },
+];
+
+// "17:03/mi (3.5 mph)" — mph from the session when logged, else derived.
+const fmtPace = (r) => {
+    if (!r.pace) return '';
+    const mph = r.mph != null
+        ? r.mph
+        : (Number.isFinite(r.paceSec) && r.paceSec > 0 ? Math.round(36000 / r.paceSec) / 10 : null);
+    return `${r.pace}/mi${mph != null ? ` (${mph} mph)` : ''}`;
+};
+
+const fmtDate = (dateKey) => {
+    const d = new Date(
+        parseInt(dateKey.slice(0, 4)),
+        parseInt(dateKey.slice(4, 6)) - 1,
+        parseInt(dateKey.slice(6, 8))
+    );
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const rangeStartKey = (rangeId) => {
+    const now = new Date();
+    let d;
+    if (rangeId === 'year') d = new Date(now.getFullYear(), 0, 1);
+    else if (rangeId === '6m') { d = new Date(now); d.setMonth(d.getMonth() - 6); }
+    else if (rangeId === '3m') { d = new Date(now); d.setMonth(d.getMonth() - 3); }
+    else if (rangeId === '30d') { d = new Date(now); d.setDate(d.getDate() - 30); }
+    else return '00000000';
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const paceToSeconds = (pace) => {
+    if (!pace || typeof pace !== 'string') return Infinity;
+    const parts = pace.split(':').map(Number);
+    if (parts.some(isNaN)) return Infinity;
+    return parts.length === 2 ? parts[0] * 60 + parts[1] : parts[0];
+};
+
+const fmtMins = (mins) => {
+    const h = Math.floor(mins / 60);
+    const m = Math.round(mins % 60);
+    return h > 0 ? `${h}h ${m}m` : `${m} min`;
+};
+
+const Stats = ({ exercises, cardioExercises }) => {
+    const database = getDatabase();
+
+    const [mode, setMode] = useState('strength');
+    const [range, setRange] = useState('all');
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
+    const [repMin, setRepMin] = useState('any');
+    const [search, setSearch] = useState('');
+    // Expansion is global: opening one card opens them all, so a taller grid
+    // row is always filled with data instead of neighboring blank space.
+    const [expanded, setExpanded] = useState(false);
+    const [loading, setLoading] = useState(true);
+
+    // Flattened history rows, loaded once for ALL years.
+    const [strengthRows, setStrengthRows] = useState([]);   // {dateKey, exerciseId, weight, reps}
+    const [cardioRows, setCardioRows] = useState([]);       // {dateKey, activityId, distance, mins, pace, mph, resistance}
+
+    // Per-cardio-card filters: { [activityId]: { metric, duration, resistance } }
+    const [cardioFilters, setCardioFilters] = useState({});
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([
+            get(ref(database, 'workouts')),
+            get(ref(database, 'cardio')),
+        ]).then(([wSnap, cSnap]) => {
+            if (cancelled) return;
+
+            const sRows = [];
+            const wData = wSnap.val() || {};
+            for (const months of Object.values(wData)) {
+                for (const days of Object.values(months || {})) {
+                    for (const [dateKey, byExercise] of Object.entries(days || {})) {
+                        for (const [exerciseId, workout] of Object.entries(byExercise || {})) {
+                            (workout.sets || []).forEach((s) => {
+                                if (s == null) return;
+                                sRows.push({
+                                    dateKey,
+                                    exerciseId,
+                                    weight: parseInt(s.weight) || 0,
+                                    reps: parseInt(s.reps) || 0,
+                                });
+                            });
+                        }
+                    }
+                }
+            }
+
+            const cRows = [];
+            const cData = cSnap.val() || {};
+            for (const months of Object.values(cData)) {
+                for (const days of Object.values(months || {})) {
+                    for (const [dateKey, byActivity] of Object.entries(days || {})) {
+                        for (const [activityId, entry] of Object.entries(byActivity || {})) {
+                            (entry.sessions || []).forEach((s) => {
+                                if (s == null) return;
+                                const mins = (s.time?.hours || 0) * 60 + (s.time?.minutes || 0) + (s.time?.seconds || 0) / 60;
+                                cRows.push({
+                                    dateKey,
+                                    activityId,
+                                    distance: typeof s.distance === 'number' ? s.distance : parseFloat(s.distance) || 0,
+                                    mins,
+                                    pace: s.speed?.pace || null,
+                                    paceSec: paceToSeconds(s.speed?.pace),
+                                    mph: s.speed?.mph ?? null,
+                                    resistance: s.resistance ?? null,
+                                });
+                            });
+                        }
+                    }
+                }
+            }
+
+            setStrengthRows(sRows);
+            setCardioRows(cRows);
+            setLoading(false);
+        }).catch((e) => {
+            console.error('Stats: failed to load history', e);
+            setLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [database]);
+
+    // Date window as YYYYMMDD keys. Custom range uses the two date inputs;
+    // an empty input means "open-ended" on that side.
+    const startKey = useMemo(() => {
+        if (range === 'custom') return customStart ? customStart.replace(/-/g, '') : '00000000';
+        return rangeStartKey(range);
+    }, [range, customStart]);
+    const endKey = useMemo(() => {
+        if (range === 'custom' && customEnd) return customEnd.replace(/-/g, '');
+        return '99999999';
+    }, [range, customEnd]);
+
+    /* ── Strength records ── */
+    const strengthCards = useMemo(() => {
+        const minReps = repMin === 'any' ? 0 : parseInt(repMin);
+        const inRange = strengthRows.filter((r) => r.dateKey >= startKey && r.dateKey <= endKey && r.reps >= minReps);
+        const byExercise = {};
+        for (const row of inRange) {
+            (byExercise[row.exerciseId] = byExercise[row.exerciseId] || []).push(row);
+        }
+
+        const cards = [];
+        for (const [exerciseId, rows] of Object.entries(byExercise)) {
+            const ex = exercises[exerciseId];
+            if (!ex) continue;
+            if (search && !ex.name.toLowerCase().includes(search.toLowerCase())) continue;
+            const isCali = CALISTHENICS.has(ex.name);
+
+            // Rank sets: weighted lifts by weight then reps; calisthenics by reps.
+            const ranked = [...rows].sort((a, b) =>
+                isCali ? (b.reps - a.reps || b.weight - a.weight)
+                       : (b.weight - a.weight || b.reps - a.reps)
+            );
+
+            // Collapse duplicate (weight, reps) pairs. Each entry keeps the
+            // EARLIEST date it was achieved plus a count of every repeat, so
+            // ties show as e.g. "50 reps (3)".
+            const byPair = new Map(); // "weightxreps" -> entry with count
+            const pairOrder = [];
+            for (const r of ranked) {
+                const k = `${r.weight}x${r.reps}`;
+                const existing = byPair.get(k);
+                if (existing) {
+                    existing.count += 1;
+                    if (r.dateKey < existing.dateKey) existing.dateKey = r.dateKey;
+                } else {
+                    byPair.set(k, { ...r, count: 1 });
+                    pairOrder.push(k);
+                }
+            }
+            const top = pairOrder.slice(0, 5).map((k) => byPair.get(k));
+            if (top.length === 0) continue;
+
+            cards.push({
+                exerciseId,
+                name: ex.name,
+                muscleGroup: ex.muscleGroup,
+                color: MUSCLE_GROUPS[ex.muscleGroup]?.color || '#e0e0e0',
+                order: MUSCLE_GROUPS[ex.muscleGroup]?.order || 999,
+                isCali,
+                isTimed: TIMED_EXERCISES.has(ex.name),
+                icon: exerciseIconPath(ex),
+                best: top[0],
+                top,
+                totalSets: rows.length,
+            });
+        }
+
+        cards.sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name));
+        return cards;
+    }, [strengthRows, startKey, endKey, exercises, repMin, search]);
+
+    /* ── Cardio records ── */
+    const cardioCards = useMemo(() => {
+        const inRange = cardioRows.filter((r) => r.dateKey >= startKey && r.dateKey <= endKey);
+        const byActivity = {};
+        for (const row of inRange) {
+            (byActivity[row.activityId] = byActivity[row.activityId] || []).push(row);
+        }
+
+        const cards = [];
+        for (const [activityId, rows] of Object.entries(byActivity)) {
+            const ex = cardioExercises[activityId];
+            if (!ex) continue;
+            if (search && !ex.name.toLowerCase().includes(search.toLowerCase())) continue;
+
+            const resistances = [...new Set(rows.map((r) => r.resistance).filter((v) => v != null))]
+                .sort((a, b) => a - b);
+
+            const f = cardioFilters[activityId] || { metric: 'distance', duration: 'any', distance: 'any', resistance: 'any' };
+
+            let filtered = rows;
+            if (f.resistance !== 'any') {
+                filtered = filtered.filter((r) => r.resistance === parseInt(f.resistance));
+            }
+            if (f.metric === 'pace') {
+                // Pace mode: filter by DISTANCE ("fastest pace over ~3 mi").
+                if (f.distance !== 'any') {
+                    const bucket = DISTANCE_BUCKETS.find((b) => b.id === f.distance);
+                    if (bucket) filtered = filtered.filter((r) => r.distance >= bucket.min && r.distance <= bucket.max);
+                }
+            } else if (f.duration !== 'any') {
+                const bucket = DURATION_BUCKETS.find((b) => b.id === f.duration);
+                if (bucket) filtered = filtered.filter((r) => r.mins >= bucket.min && r.mins <= bucket.max);
+            }
+
+            const ranked = [...filtered].sort((a, b) => {
+                if (f.metric === 'pace') return a.paceSec - b.paceSec;         // fastest pace
+                if (f.metric === 'duration') return b.mins - a.mins;           // longest session
+                return b.distance - a.distance;                                 // longest distance
+            });
+
+            cards.push({
+                activityId,
+                name: ex.name,
+                icon: cardioIconPath(ex),
+                order: CARDIO_ORDER.indexOf(ex.name) === -1 ? 999 : CARDIO_ORDER.indexOf(ex.name),
+                resistances,
+                filters: f,
+                top: ranked.slice(0, 5),
+                totalSessions: rows.length,
+                matchCount: filtered.length,
+            });
+        }
+
+        cards.sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name));
+        return cards;
+    }, [cardioRows, startKey, endKey, cardioExercises, cardioFilters, search]);
+
+    const setCardFilter = (activityId, patch) => {
+        setCardioFilters((prev) => ({
+            ...prev,
+            [activityId]: { metric: 'distance', duration: 'any', distance: 'any', resistance: 'any', ...(prev[activityId] || {}), ...patch },
+        }));
+    };
+
+    const rangeLabel = range === 'custom'
+        ? `${customStart || 'start'} → ${customEnd || 'today'}`
+        : (RANGE_OPTIONS.find((r) => r.id === range)?.label || 'All Time');
+
+    if (loading) {
+        return <div className="stats-page"><div className="stats-loading">Crunching history…</div></div>;
+    }
+
+    return (
+        <div className="stats-page">
+            <div className="stats-header">
+                <h2 className="stats-title">Stats</h2>
+                <span className="stats-subtitle">Personal records — {rangeLabel.toLowerCase()}</span>
+            </div>
+
+            <div className="stats-controls">
+                <div className="stats-mode-toggle">
+                    <button
+                        className={`stats-mode-btn ${mode === 'strength' ? 'active' : ''}`}
+                        onClick={() => setMode('strength')}
+                    >Strength</button>
+                    <button
+                        className={`stats-mode-btn ${mode === 'cardio' ? 'active' : ''}`}
+                        onClick={() => setMode('cardio')}
+                    >Cardio</button>
+                </div>
+                <select
+                    className="stats-range-select"
+                    value={range}
+                    onChange={(e) => setRange(e.target.value)}
+                >
+                    {RANGE_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+                {range === 'custom' && (
+                    <div className="stats-custom-range">
+                        <input
+                            type="date"
+                            value={customStart}
+                            max={customEnd || undefined}
+                            onChange={(e) => setCustomStart(e.target.value)}
+                            title="From (leave empty for open start)"
+                        />
+                        <span className="stats-custom-arrow">&rarr;</span>
+                        <input
+                            type="date"
+                            value={customEnd}
+                            min={customStart || undefined}
+                            onChange={(e) => setCustomEnd(e.target.value)}
+                            title="To (leave empty for today)"
+                        />
+                    </div>
+                )}
+                {mode === 'strength' && (
+                    <select
+                        className="stats-range-select"
+                        value={repMin}
+                        onChange={(e) => setRepMin(e.target.value)}
+                        title="Heaviest set with at least this many reps"
+                    >
+                        {REP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                )}
+                <div className="stats-search">
+                    <input
+                        type="text"
+                        placeholder={mode === 'strength' ? 'Search exercises…' : 'Search activities…'}
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
+                    {search && (
+                        <button className="stats-search-clear" onClick={() => setSearch('')}>&times;</button>
+                    )}
+                </div>
+            </div>
+
+            {mode === 'strength' && (
+                <div className="stats-grid">
+                    {strengthCards.map((card) => {
+                        const isExpanded = expanded;
+                        return (
+                            <div
+                                key={card.exerciseId}
+                                className={`stats-card ${isExpanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: card.color }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: card.color }}>
+                                        {card.icon && <img src={card.icon} alt="" className="stats-card-icon" width="15" height="15" />}
+                                        {card.name}
+                                    </span>
+                                    <span className="stats-card-sets">{card.totalSets} sets</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    {card.isTimed
+                                        ? <><span className="stats-big">{card.best.reps}</span> sec{card.best.weight > 0 ? ` (+${card.best.weight} lbs)` : ''}</>
+                                        : card.isCali
+                                            ? <><span className="stats-big">{card.best.reps}</span> reps{card.best.weight > 0 ? ` (+${card.best.weight} lbs)` : ''}</>
+                                            : <><span className="stats-big">{card.best.weight}</span> lbs × {card.best.reps}</>}
+                                    {card.best.count > 1 && (
+                                        <span className="stats-tie-count" title={`Achieved ${card.best.count} times — date shown is the first`}>
+                                            ({card.best.count})
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="stats-card-date">{fmtDate(card.best.dateKey)}</div>
+                                {isExpanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {card.top.map((r, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">
+                                                    {card.isTimed
+                                                        ? `${r.reps} sec${r.weight > 0 ? ` (+${r.weight} lbs)` : ''}`
+                                                        : card.isCali
+                                                            ? `${r.reps} reps${r.weight > 0 ? ` (+${r.weight} lbs)` : ''}`
+                                                            : `${r.weight} lbs × ${r.reps}`}
+                                                    {r.count > 1 && (
+                                                        <span className="stats-tie-count" title={`Achieved ${r.count} times — date shown is the first`}>
+                                                            ({r.count})
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {strengthCards.length === 0 && (
+                        <div className="stats-empty">No strength data in this range.</div>
+                    )}
+                </div>
+            )}
+
+            {mode === 'cardio' && (
+                <div className="stats-grid stats-grid-cardio">
+                    {cardioCards.map((card) => (
+                        <div key={card.activityId} className="stats-card stats-card-cardio" style={{ borderLeftColor: '#cadcfd' }}>
+                            <div className="stats-card-head">
+                                <span className="stats-card-name" style={{ color: '#cadcfd' }}>
+                                    {card.icon && <img src={card.icon} alt="" className="stats-card-icon" width="15" height="15" />}
+                                    {card.name}
+                                </span>
+                                <span className="stats-card-sets">{card.matchCount}/{card.totalSessions} sessions</span>
+                            </div>
+
+                            <div className="stats-cardio-filters">
+                                <select
+                                    value={card.filters.metric}
+                                    onChange={(e) => setCardFilter(card.activityId, { metric: e.target.value })}
+                                >
+                                    <option value="distance">Best distance</option>
+                                    <option value="pace">Fastest pace</option>
+                                    <option value="duration">Longest session</option>
+                                </select>
+                                {card.filters.metric === 'pace' ? (
+                                    <select
+                                        value={card.filters.distance}
+                                        onChange={(e) => setCardFilter(card.activityId, { distance: e.target.value })}
+                                        title="Fastest pace over this distance"
+                                    >
+                                        {DISTANCE_BUCKETS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                                    </select>
+                                ) : (
+                                    <select
+                                        value={card.filters.duration}
+                                        onChange={(e) => setCardFilter(card.activityId, { duration: e.target.value })}
+                                    >
+                                        {DURATION_BUCKETS.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                                    </select>
+                                )}
+                                {card.resistances.length > 0 && (
+                                    <select
+                                        value={card.filters.resistance}
+                                        onChange={(e) => setCardFilter(card.activityId, { resistance: e.target.value })}
+                                    >
+                                        <option value="any">Any resist.</option>
+                                        {card.resistances.map((r) => <option key={r} value={r}>R{r}</option>)}
+                                    </select>
+                                )}
+                            </div>
+
+                            {card.top.length > 0 ? (
+                                <ol className="stats-top-list stats-top-list-cardio">
+                                    {card.top.map((r, i) => (
+                                        <li key={i} className={i === 0 ? 'stats-top-pr' : ''}>
+                                            <span className="stats-top-rank">{i + 1}</span>
+                                            <span className="stats-top-value">
+                                                {r.distance ? `${r.distance} mi` : fmtMins(r.mins)}
+                                                <span className="stats-top-detail">
+                                                    {' '}· {fmtMins(r.mins)}
+                                                    {r.pace ? ` · ${fmtPace(r)}` : ''}
+                                                    {r.resistance != null ? ` · R${r.resistance}` : ''}
+                                                </span>
+                                            </span>
+                                            <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                        </li>
+                                    ))}
+                                </ol>
+                            ) : (
+                                <div className="stats-empty-card">No sessions match these filters.</div>
+                            )}
+                        </div>
+                    ))}
+                    {cardioCards.length === 0 && (
+                        <div className="stats-empty">No cardio data in this range.</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default Stats;

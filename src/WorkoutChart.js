@@ -7,6 +7,7 @@ import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
 import './WorkoutChart.css';
 import { set } from 'date-fns';
+import Stats from './Stats';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -33,7 +34,7 @@ let today = new Date();
 let currentDay = today.getDate().toString();
 let isCurrentMonth;
 
-const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose }) => {
+const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose, page, setPage }) => {
 
 
     // Get current date to highlight active month
@@ -72,6 +73,7 @@ const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose }) => {
             startDate,
             endDate
         });
+        if (setPage) setPage('chart'); // picking a month always returns to the chart
     };
 
     // Generate years from 2024 to 2030
@@ -85,6 +87,14 @@ const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose }) => {
 
     return (
         <div className={`date-sidebar ${isOpen ? 'drawer-open' : ''}`}>
+            {/* Stats page — sits above the year list */}
+            <div
+                className={`stats-nav-item ${page === 'stats' ? 'active' : ''}`}
+                onClick={() => { setPage('stats'); if (onClose) onClose(); }}
+            >
+                <span className="stats-nav-icon">&#9733;</span>
+                <span>Stats</span>
+            </div>
             {years.map(year => (
                 <div key={year} className="year-section">
                     <div
@@ -135,7 +145,21 @@ const WorkoutChart = () => {
     const [yAxisLabels, setYAxisLabels] = useState([]);
 
     // State variables
+    const [page, setPage] = useState('chart'); // 'chart' or 'stats'
     const [mode, setMode] = useState('strength'); // 'workout' or 'cardio'
+
+    // Returning from Stats remounts the canvas, but chartInstance still points
+    // at the OLD (unmounted) canvas — destroy it so the next updateChart()
+    // recreates the chart on the fresh canvas. Runs after render, so
+    // chartRef.current is already the new canvas.
+    useEffect(() => {
+        if (page === 'chart' && chartInstance.current) {
+            chartInstance.current.destroy();
+            chartInstance.current = null;
+            updateChart();
+            updateChartMode();
+        }
+    }, [page]);
     const [metricType, setMetricType] = useState('distance');
     const [exercises, setExercises] = useState({}); //list of exercises pulled from firebase
     const [workouts, setWorkouts] = useState({});   //list of workouts pulled from firebase
@@ -1717,7 +1741,7 @@ const WorkoutChart = () => {
                 const tooltipLines = [
                     raw.exercise,
                     `Distance: ${raw.distance} miles`,
-                    `Pace: ${raw.pace} min/mile`,
+                    `Pace: ${raw.pace} min/mile${raw.mph ? ` (${raw.mph} mph)` : ''}`,
                     `Time: ${raw.time}`,
                 ];
 
@@ -1883,8 +1907,14 @@ const WorkoutChart = () => {
                 setDateRange={setDateRange}
                 isOpen={isDateDrawerOpen}
                 onClose={closeAllDrawers}
+                page={page}
+                setPage={setPage}
             />
 
+            {page === 'stats' ? (
+                <Stats exercises={exercises} cardioExercises={cardioExercises} />
+            ) : (
+            <>
             <div className="mobile-controls-row">
             {/* Mode Toggle Button */}
             <button
@@ -2146,6 +2176,8 @@ const WorkoutChart = () => {
                         )}
                 </div>
             </div>
+            </>
+            )}
         </div>
         </>
     );

@@ -150,6 +150,7 @@ const Stats = ({ exercises, cardioExercises }) => {
     // Flattened history rows, loaded once for ALL years.
     const [strengthRows, setStrengthRows] = useState([]);   // {dateKey, exerciseId, weight, reps}
     const [cardioRows, setCardioRows] = useState([]);       // {dateKey, activityId, distance, mins, pace, mph, resistance}
+    const [weightRows, setWeightRows] = useState([]);       // {dateKey, lbs, kg, time}
 
     // Per-cardio-card filters: { [activityId]: { metric, duration, resistance } }
     const [cardioFilters, setCardioFilters] = useState({});
@@ -159,7 +160,8 @@ const Stats = ({ exercises, cardioExercises }) => {
         Promise.all([
             get(ref(database, 'workouts')),
             get(ref(database, 'cardio')),
-        ]).then(([wSnap, cSnap]) => {
+            get(ref(database, 'weightLog')),
+        ]).then(([wSnap, cSnap, wtSnap]) => {
             if (cancelled) return;
 
             const sRows = [];
@@ -207,8 +209,22 @@ const Stats = ({ exercises, cardioExercises }) => {
                 }
             }
 
+            // weightLog/<YYYY-MM-DD>/<unix ts> -> { lbs, kg, time }; dateKey
+            // normalized to YYYYMMDD to share the range filters.
+            const wtRows = [];
+            const wtData = wtSnap.val() || {};
+            for (const [isoDate, entries] of Object.entries(wtData)) {
+                const dateKey = isoDate.replace(/-/g, '');
+                for (const entry of Object.values(entries || {})) {
+                    if (entry == null || typeof entry.lbs !== 'number') continue;
+                    wtRows.push({ dateKey, lbs: entry.lbs, kg: entry.kg, time: entry.time || '' });
+                }
+            }
+            wtRows.sort((a, b) => (a.dateKey < b.dateKey ? -1 : 1));
+
             setStrengthRows(sRows);
             setCardioRows(cRows);
+            setWeightRows(wtRows);
             setLoading(false);
         }).catch((e) => {
             console.error('Stats: failed to load history', e);
@@ -345,6 +361,78 @@ const Stats = ({ exercises, cardioExercises }) => {
         return cards;
     }, [cardioRows, startKey, endKey, cardioExercises, cardioFilters, search]);
 
+    /* ── Weight records ── */
+    const fmtMonthKey = (m) => new Date(parseInt(m.slice(0, 4)), parseInt(m.slice(4, 6)) - 1, 1)
+        .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+    const weightStats = useMemo(() => {
+        const inRange = weightRows.filter((r) => r.dateKey >= startKey && r.dateKey <= endKey);
+        if (inRange.length === 0) return null;
+
+        // Collapse duplicate lbs values (same convention as strength ties):
+        // keep the earliest date plus a count of repeats.
+        const collapseByValue = (sorted) => {
+            const byVal = new Map();
+            const order = [];
+            for (const r of sorted) {
+                const existing = byVal.get(r.lbs);
+                if (existing) {
+                    existing.count += 1;
+                    if (r.dateKey < existing.dateKey) existing.dateKey = r.dateKey;
+                } else {
+                    byVal.set(r.lbs, { ...r, count: 1 });
+                    order.push(r.lbs);
+                }
+            }
+            return order.slice(0, 5).map((v) => byVal.get(v));
+        };
+        const lowest = collapseByValue([...inRange].sort((a, b) => a.lbs - b.lbs || (a.dateKey < b.dateKey ? -1 : 1)));
+        const highest = collapseByValue([...inRange].sort((a, b) => b.lbs - a.lbs || (a.dateKey < b.dateKey ? -1 : 1)));
+
+        // Per-month aggregates (rows are already date-sorted)
+        const byMonth = {};
+        for (const r of inRange) {
+            (byMonth[r.dateKey.slice(0, 6)] = byMonth[r.dateKey.slice(0, 6)] || []).push(r);
+        }
+        const months = Object.entries(byMonth).map(([month, rows]) => ({
+            month,
+            count: rows.length,
+            days: new Set(rows.map((r) => r.dateKey)).size,
+            avg: rows.reduce((a, r) => a + r.lbs, 0) / rows.length,
+            change: rows[rows.length - 1].lbs - rows[0].lbs,
+        }));
+        const lightestMonths = months.filter((m) => m.count >= 5).sort((a, b) => a.avg - b.avg).slice(0, 5);
+        const biggestLoss = months.filter((m) => m.days >= 2 && m.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
+
+        // Longest run of consecutive days with at least one weigh-in
+        const dayKeys = [...new Set(inRange.map((r) => r.dateKey))].sort();
+        const toDate = (k) => new Date(parseInt(k.slice(0, 4)), parseInt(k.slice(4, 6)) - 1, parseInt(k.slice(6, 8)));
+        const streaks = [];
+        let runStart = dayKeys[0];
+        let prev = dayKeys[0];
+        for (let i = 1; i <= dayKeys.length; i++) {
+            const k = dayKeys[i];
+            const contiguous = k && (toDate(k) - toDate(prev) === 86400000);
+            if (!contiguous) {
+                streaks.push({
+                    len: Math.round((toDate(prev) - toDate(runStart)) / 86400000) + 1,
+                    start: runStart,
+                    end: prev,
+                });
+                runStart = k;
+            }
+            prev = k;
+        }
+        const topStreaks = streaks.sort((a, b) => b.len - a.len || (a.start < b.start ? -1 : 1)).slice(0, 5);
+
+        return {
+            lowest, highest, lightestMonths, biggestLoss,
+            streaks: topStreaks,
+            total: inRange.length,
+            daysLogged: dayKeys.length,
+        };
+    }, [weightRows, startKey, endKey]);
+
     const setCardFilter = (activityId, patch) => {
         setCardioFilters((prev) => ({
             ...prev,
@@ -414,6 +502,7 @@ const Stats = ({ exercises, cardioExercises }) => {
                         {REP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
                     </select>
                 )}
+                {mode !== 'weight' && (
                 <div className="stats-search">
                     <input
                         type="text"
@@ -425,6 +514,13 @@ const Stats = ({ exercises, cardioExercises }) => {
                         <button className="stats-search-clear" onClick={() => setSearch('')}>&times;</button>
                     )}
                 </div>
+                )}
+                {/* Weight records — dedicated button on the right, separate
+                    from the strength/cardio pair */}
+                <button
+                    className={`stats-weight-btn ${mode === 'weight' ? 'active' : ''}`}
+                    onClick={() => setMode(mode === 'weight' ? 'strength' : 'weight')}
+                >Weight</button>
             </div>
 
             {mode === 'strength' && (
@@ -560,6 +656,161 @@ const Stats = ({ exercises, cardioExercises }) => {
                     ))}
                     {cardioCards.length === 0 && (
                         <div className="stats-empty">No cardio data in this range.</div>
+                    )}
+                </div>
+            )}
+
+            {mode === 'weight' && (
+                <div className="stats-grid">
+                    {weightStats ? (
+                        <>
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: '#C58AF9' }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: '#C58AF9' }}>Lowest Weight</span>
+                                    <span className="stats-card-sets">{weightStats.total} weigh-ins</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{weightStats.lowest[0].lbs}</span> lbs
+                                    {weightStats.lowest[0].count > 1 && (
+                                        <span className="stats-tie-count" title={`Hit ${weightStats.lowest[0].count} times — date shown is the first`}>
+                                            ({weightStats.lowest[0].count})
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="stats-card-date">{fmtDate(weightStats.lowest[0].dateKey)}</div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {weightStats.lowest.map((r, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">
+                                                    {r.lbs} lbs
+                                                    {r.count > 1 && <span className="stats-tie-count">({r.count})</span>}
+                                                </span>
+                                                <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: '#C58AF9' }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: '#C58AF9' }}>Highest Weight</span>
+                                    <span className="stats-card-sets">{weightStats.daysLogged} days</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{weightStats.highest[0].lbs}</span> lbs
+                                    {weightStats.highest[0].count > 1 && (
+                                        <span className="stats-tie-count">({weightStats.highest[0].count})</span>
+                                    )}
+                                </div>
+                                <div className="stats-card-date">{fmtDate(weightStats.highest[0].dateKey)}</div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {weightStats.highest.map((r, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">
+                                                    {r.lbs} lbs
+                                                    {r.count > 1 && <span className="stats-tie-count">({r.count})</span>}
+                                                </span>
+                                                <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+
+                            {weightStats.lightestMonths.length > 0 && (
+                                <div
+                                    className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                    style={{ borderLeftColor: '#C58AF9' }}
+                                    onClick={() => setExpanded((v) => !v)}
+                                >
+                                    <div className="stats-card-head">
+                                        <span className="stats-card-name" style={{ color: '#C58AF9' }}>Lightest Month</span>
+                                        <span className="stats-card-sets">avg · ≥5 weigh-ins</span>
+                                    </div>
+                                    <div className="stats-card-record">
+                                        <span className="stats-big">{weightStats.lightestMonths[0].avg.toFixed(1)}</span> lbs
+                                    </div>
+                                    <div className="stats-card-date">{fmtMonthKey(weightStats.lightestMonths[0].month)}</div>
+                                    {expanded && (
+                                        <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                            {weightStats.lightestMonths.map((m, i) => (
+                                                <li key={i}>
+                                                    <span className="stats-top-value">{m.avg.toFixed(1)} lbs</span>
+                                                    <span className="stats-top-date">{fmtMonthKey(m.month)}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    )}
+                                </div>
+                            )}
+
+                            {weightStats.biggestLoss.length > 0 && (
+                                <div
+                                    className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                    style={{ borderLeftColor: '#93c47d' }}
+                                    onClick={() => setExpanded((v) => !v)}
+                                >
+                                    <div className="stats-card-head">
+                                        <span className="stats-card-name" style={{ color: '#93c47d' }}>Biggest Monthly Loss</span>
+                                        <span className="stats-card-sets">first → last</span>
+                                    </div>
+                                    <div className="stats-card-record">
+                                        <span className="stats-big">{weightStats.biggestLoss[0].change.toFixed(1)}</span> lbs
+                                    </div>
+                                    <div className="stats-card-date">{fmtMonthKey(weightStats.biggestLoss[0].month)}</div>
+                                    {expanded && (
+                                        <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                            {weightStats.biggestLoss.map((m, i) => (
+                                                <li key={i}>
+                                                    <span className="stats-top-value">{m.change.toFixed(1)} lbs</span>
+                                                    <span className="stats-top-date">{fmtMonthKey(m.month)}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    )}
+                                </div>
+                            )}
+
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: '#C58AF9' }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: '#C58AF9' }}>Longest Streak</span>
+                                    <span className="stats-card-sets">consecutive days</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{weightStats.streaks[0].len}</span> days
+                                </div>
+                                <div className="stats-card-date">
+                                    {fmtDate(weightStats.streaks[0].start)} → {fmtDate(weightStats.streaks[0].end)}
+                                </div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {weightStats.streaks.map((s, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">{s.len} days</span>
+                                                <span className="stats-top-date">{fmtDate(s.start)} → {fmtDate(s.end)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="stats-empty">No weight data in this range.</div>
                     )}
                 </div>
             )}

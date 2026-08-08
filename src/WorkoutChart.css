@@ -255,6 +255,44 @@ html, body {
   font-style: italic;
 }
 
+/* Weight mode: month summary card in the right panel */
+.weight-summary {
+  margin: 10px 12px 0 12px;
+  padding: 14px 16px;
+  background: rgba(197, 138, 249, 0.06);
+  border: 1px solid rgba(197, 138, 249, 0.25);
+  border-radius: 8px;
+}
+
+.weight-summary-title {
+  color: #C58AF9;
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.weight-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  color: #e0e0e0;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.weight-summary-row:last-child {
+  border-bottom: none;
+}
+
+.weight-summary-row span:first-child {
+  color: #9a9a9a;
+}
+
+.weight-week-delta {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
 /* Exercise shape styling */
 .exercise-shape {
   width: 16px;
@@ -472,6 +510,47 @@ html, body {
 
 .mode-toggle-button:hover {
   background-color: #c5b8e5;
+}
+
+/* Weight mode — dedicated button on the RIGHT side of the chart column
+   (mirrors the strength/cardio toggle on the left). Anchored INSIDE
+   .chart-and-title so it can never clip into the exercises panel. */
+.weight-mode-button {
+  padding: 8px 16px;
+  width: 100px;
+  height: 36px;
+  border-radius: 20px;
+  border: 1.5px solid #C58AF9;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  background-color: transparent;
+  color: #C58AF9;
+  z-index: 10;
+}
+
+.weight-mode-button:hover {
+  background-color: rgba(197, 138, 249, 0.18);
+}
+
+.weight-mode-button.active {
+  background-color: #C58AF9;
+  color: #1e1e1e;
+}
+
+.chart-and-title {
+  position: relative;
+}
+
+.weight-mode-button-desktop {
+  position: absolute;
+  top: 20px;
+  right: 12px;
+}
+
+/* Mobile twin hidden on desktop (shown in the controls row on mobile) */
+.weight-mode-button-mobile {
+  display: none;
 }
 
 /* Metric Toggle Buttons (Distance/Pace) */
@@ -876,13 +955,31 @@ html, body {
      Grid: column 1 = mode toggle button (auto), column 2 = legend or metric toggle (fills row). */
   .mobile-controls-row {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 8px;
     padding: 10px 12px 6px;
     width: 100%;
     box-sizing: border-box;
     flex-shrink: 0;
+  }
+
+  /* Weight button rides the right edge of the controls row; the desktop
+     twin (absolute in the chart column) is hidden here */
+  .weight-mode-button-mobile {
+    display: block;
+    grid-column: 3;
+    position: relative !important;
+    top: unset !important;
+    right: unset !important;
+    width: auto !important;
+    padding: 8px 16px !important;
+    height: 34px !important;
+    font-size: 13px !important;
+  }
+
+  .weight-mode-button-desktop {
+    display: none !important;
   }
 
   /* In cardio mode the second grid cell holds the metric toggle — keep it centered

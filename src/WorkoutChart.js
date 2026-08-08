@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Chart, registerables } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue } from 'firebase/database';
+import { getDatabase, ref, onValue, query, orderByKey, startAt, endAt } from 'firebase/database';
 import './WorkoutChart.css';
 import { set } from 'date-fns';
 import Stats from './Stats';
@@ -146,7 +146,23 @@ const WorkoutChart = () => {
 
     // State variables
     const [page, setPage] = useState('chart'); // 'chart' or 'stats'
-    const [mode, setMode] = useState('strength'); // 'workout' or 'cardio'
+    const [mode, setMode] = useState('strength'); // 'strength', 'cardio' or 'weight'
+
+    // Strength <-> cardio share the left toggle (and Tab). Weight is its own
+    // dedicated button on the right; entering it remembers which of the two
+    // you came from so leaving returns you there.
+    const modeLabel = { strength: 'Strength', cardio: 'Cardio', weight: 'Weight' };
+    const lastNonWeightMode = useRef('strength');
+
+    const toggleWeightMode = () => {
+        if (mode !== 'weight') {
+            lastNonWeightMode.current = mode;
+            setMode('weight');
+        } else {
+            setMode(lastNonWeightMode.current);
+        }
+        if (chartInstance.current) chartInstance.current.options.scales.y.reverse = false;
+    };
 
     // Returning from Stats remounts the canvas, but chartInstance still points
     // at the OLD (unmounted) canvas — destroy it so the next updateChart()
@@ -258,6 +274,10 @@ const WorkoutChart = () => {
     const [cardioWorkouts, setCardioWorkouts] = useState({});
     const [selectedCardioActivities, setSelectedCardioActivities] = useState([]);
 
+    // Weight mode: weightLog/<YYYY-MM-DD>/<unix ts> -> { lbs, kg, time }
+    // (written by the Withings pipeline), fetched per selected month.
+    const [weightEntries, setWeightEntries] = useState({});
+
     // ... [rest of existing state and useEffects]
 
     // Filter activities based on search term
@@ -328,16 +348,17 @@ const WorkoutChart = () => {
             if (!event.ctrlKey && event.key === 'Tab') {
                 event.preventDefault(); // Prevent default browser tab switching
 
-                // Toggle between strength and cardio mode
+                // Tab toggles strength <-> cardio only. Weight is never
+                // ENTERED via Tab — but pressing Tab while on the weight
+                // graph exits back to the last strength/cardio mode.
                 setMode(prevMode => {
-                    const newMode = prevMode === 'strength' ? 'cardio' : 'strength';
-
                     // Reset Y-axis reverse when switching modes
                     if (chartInstance.current) {
                         chartInstance.current.options.scales.y.reverse = false;
                     }
 
-                    return newMode;
+                    if (prevMode === 'weight') return lastNonWeightMode.current;
+                    return prevMode === 'strength' ? 'cardio' : 'strength';
                 });
             }
         };
@@ -382,7 +403,7 @@ const WorkoutChart = () => {
             });
 
             return () => unsubscribe();
-        } else {
+        } else if (mode === 'cardio') {
             // Fetch cardio workouts
             console.log(`Fetching cardio workouts for ${year}/${month}`);
             const cardioMonthRef = ref(database, `cardio/${year}/${month}`);
@@ -393,6 +414,22 @@ const WorkoutChart = () => {
             });
 
             return () => unsubscribe();
+        } else {
+            // Fetch weight log for the month — keys are YYYY-MM-DD, so an
+            // orderByKey range covers exactly the selected month.
+            console.log(`Fetching weight log for ${year}-${month}`);
+            const weightQuery = query(
+                ref(database, 'weightLog'),
+                orderByKey(),
+                startAt(`${year}-${month}-01`),
+                endAt(`${year}-${month}-31`)
+            );
+
+            const unsubscribe = onValue(weightQuery, (snapshot) => {
+                setWeightEntries(snapshot.val() || {});
+            });
+
+            return () => unsubscribe();
         }
     }, [dateRange, mode]); // Add mode as a dependency
 
@@ -400,7 +437,7 @@ const WorkoutChart = () => {
     useEffect(() => {
         if ((mode === 'strength' && Object.keys(exercises).length === 0) ||
             (mode === 'cardio' && Object.keys(cardioExercises).length === 0)) {
-            return; // Only wait for appropriate exercises to load
+            return; // Only wait for appropriate exercises to load (weight mode has no prerequisites)
         }
 
         console.log(`Updating chart for ${mode} mode with ${metricType} metric type`);
@@ -411,6 +448,7 @@ const WorkoutChart = () => {
         workouts,
         cardioExercises,
         cardioWorkouts,
+        weightEntries,
         selectedActivities,
         selectedCardioActivities,
         selectedGroups,
@@ -923,10 +961,28 @@ const WorkoutChart = () => {
         const chartContext = chartRef.current?.getContext('2d');
         if (!chartContext) return;
 
+        // Weight mode is a line chart; strength/cardio share a bubble chart.
+        // Chart.js can't change type in place — destroy across the boundary
+        // so the mode's update function recreates with the right type.
+        if (chartInstance.current) {
+            const wantedType = mode === 'weight' ? 'line' : 'bubble';
+            if (chartInstance.current.config.type !== wantedType) {
+                chartInstance.current.destroy();
+                chartInstance.current = null;
+            }
+        }
+
         if (mode === 'strength') {
             updateStrengthChart();
-        } else {
+        } else if (mode === 'cardio') {
+            // Cardio reuses the bubble chart and only has an update path —
+            // the create path lives in updateStrengthChart. Coming from
+            // weight mode the instance was just destroyed, so build the
+            // bubble first, then let cardio restyle it.
+            if (!chartInstance.current) updateStrengthChart();
             updateCardioChart();
+        } else {
+            updateWeightChart();
         }
 
         // After the main chart's options/data are set, read the resolved y-scale tick
@@ -941,6 +997,13 @@ const WorkoutChart = () => {
     // Create modified chart configuration when switching modes
     const updateChartMode = () => {
         if (!chartInstance.current) return;
+
+        if (mode === 'weight') {
+            // Single dataset — no legend needed
+            chartInstance.current.options.plugins.legend.display = false;
+            chartInstance.current.update();
+            return;
+        }
 
         if (mode === 'cardio') {
             // Hide all strength legend items and datasets
@@ -1710,6 +1773,282 @@ const WorkoutChart = () => {
         }
     };
 
+    // ----- Weight mode: line chart of Withings weigh-ins (weightLog) -----
+    // Bounds chosen around lifetime extremes (189.5–231.2 lbs as of Aug 2026)
+    const WEIGHT_COLOR = '#C58AF9';
+    const WEIGHT_Y_MIN = 165;
+    const WEIGHT_Y_MAX = 235;
+
+    const createWeightTooltipCallback = () => {
+        return {
+            title: function (items) {
+                if (!items.length) return '';
+                const raw = items[0].raw;
+                if (!raw) return '';
+                return new Date(raw.x).toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric'
+                });
+            },
+            label: function (context) {
+                const raw = context.raw;
+                if (!raw) return [];
+                const lines = [`${raw.lbs} lbs${raw.kg ? ` (${raw.kg} kg)` : ''}`];
+                if (raw.time) lines.push(`Time: ${raw.time}`);
+                return lines;
+            }
+        };
+    };
+
+    const updateWeightChart = () => {
+        const chartContext = chartRef.current?.getContext('2d');
+        if (!chartContext) return;
+
+        // Flatten weightLog/<date>/<ts> into chronological points. Points sit
+        // on their day (like the other charts); multiple weigh-ins in one day
+        // each get their own point.
+        const dataPoints = [];
+        Object.keys(weightEntries).sort().forEach(dateKey => {
+            const entries = weightEntries[dateKey] || {};
+            Object.keys(entries).sort().forEach(ts => {
+                const e = entries[ts];
+                if (!e || typeof e.lbs !== 'number') return;
+                const [yy, mm, dd] = dateKey.split('-').map(n => parseInt(n, 10));
+                dataPoints.push({
+                    x: new Date(yy, mm - 1, dd).getTime(),
+                    y: e.lbs,
+                    lbs: e.lbs,
+                    kg: e.kg,
+                    time: e.time || '',
+                    dateKey
+                });
+            });
+        });
+
+        const hasData = dataPoints.length > 0;
+
+        const chartData = {
+            datasets: [{
+                label: 'Weight',
+                data: dataPoints,
+                borderColor: WEIGHT_COLOR,
+                backgroundColor: 'rgba(197, 138, 249, 0.15)',
+                pointBackgroundColor: WEIGHT_COLOR,
+                pointBorderColor: WEIGHT_COLOR,
+                pointRadius: 3.5,
+                pointHoverRadius: 5.5,
+                borderWidth: 2,
+                tension: 0.3,
+                fill: false,
+                spanGaps: true
+            }]
+        };
+
+        if (chartInstance.current) {
+            // Existing line chart — refresh data and no-data title
+            chartInstance.current.data = chartData;
+            chartInstance.current.options.plugins.title = hasData
+                ? { display: false }
+                : { display: true, text: 'No weight data for this month', color: '#888', font: { size: 16 } };
+            chartInstance.current.options.plugins.tooltip.callbacks = createWeightTooltipCallback();
+            chartInstance.current.update();
+        } else {
+            chartInstance.current = new Chart(chartContext, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    maintainAspectRatio: false,
+                    animation: { duration: 100 },
+                    elements: {
+                        point: {
+                            hitRadius: isMobileView ? 14 : 6
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: false
+                    },
+                    scales: {
+                        y: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)',
+                                lineWidth: 1,
+                                zeroLineColor: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            min: WEIGHT_Y_MIN,
+                            max: WEIGHT_Y_MAX,
+                            title: {
+                                display: !isMobileView,
+                                text: 'Weight (lbs)',
+                            },
+                            ticks: {
+                                display: !isMobileView,
+                                font: {
+                                    size: 13
+                                },
+                                // 165-min ticks land on 165/175/…, not multiples
+                                // of 10 — show every generated tick as-is
+                                stepSize: 10,
+                                callback: function (value) {
+                                    return value;
+                                }
+                            }
+                        },
+                        x: {
+                            offset: true,
+                            grid: {
+                                color: function (context) {
+                                    return (isCurrentMonth && context.tick.label[0] === currentDay)
+                                        ? '#b4a4da'
+                                        : "#636363";
+                                },
+                                lineWidth: function (context) {
+                                    return (isCurrentMonth && context.tick.label[0] === currentDay)
+                                        ? 0.35
+                                        : 0.13;
+                                },
+                                zeroLineColor: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            type: 'time',
+                            time: {
+                                unit: 'day',
+                                displayFormats: {
+                                    day: 'd'
+                                }
+                            },
+                            min: new Date(dateRange.startDate.getFullYear(), dateRange.startDate.getMonth(), 1).getTime(),
+                            max: new Date(dateRange.startDate.getFullYear(), dateRange.startDate.getMonth() + 1, 0).getTime(),
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 0,
+                                minRotation: 0,
+                                font: {
+                                    size: 12
+                                },
+                                color: function (context) {
+                                    return context.tick.label[0] === currentDay && isCurrentMonth ? '#b4a4da' : "#636363";
+                                },
+                                callback: function (value, index) {
+                                    const date = new Date(value);
+                                    const dayNum = date.getDate();
+                                    const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                    return [`${dayNum}`, `${dayOfWeek}`];
+                                }
+                            },
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0e0',
+                            bodyFont: {
+                                size: 14.25
+                            },
+                            callbacks: createWeightTooltipCallback()
+                        },
+                        legend: {
+                            display: false
+                        },
+                        title: hasData
+                            ? { display: false }
+                            : { display: true, text: 'No weight data for this month', color: '#888', font: { size: 16 } }
+                    }
+                }
+            });
+        }
+    };
+
+    // Month summary + weekly trend + trajectory, shown in the right panel
+    // while in weight mode.
+    const weightSummary = useMemo(() => {
+        // All weigh-ins chronologically, plus one average per day so a
+        // double weigh-in doesn't skew trend math.
+        const vals = [];
+        const days = []; // { day (1-31), avg }
+        Object.keys(weightEntries).sort().forEach(dateKey => {
+            const entries = weightEntries[dateKey] || {};
+            const dayVals = [];
+            Object.keys(entries).sort().forEach(ts => {
+                const e = entries[ts];
+                if (e && typeof e.lbs === 'number') {
+                    vals.push(e.lbs);
+                    dayVals.push(e.lbs);
+                }
+            });
+            if (dayVals.length) {
+                days.push({
+                    day: parseInt(dateKey.slice(8), 10),
+                    avg: dayVals.reduce((a, b) => a + b, 0) / dayVals.length
+                });
+            }
+        });
+        if (vals.length === 0) return null;
+
+        const monthStart = dateRange.startDate;
+        const lastDay = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+        const now = new Date();
+        const isCurrent =
+            now.getFullYear() === monthStart.getFullYear() &&
+            now.getMonth() === monthStart.getMonth();
+
+        // Calendar weeks of the month: 1–7, 8–14, 15–21, 22–28, 29–end.
+        // Delta compares to the previous week that had data.
+        const weeks = [];
+        let prevAvg = null;
+        for (let w = 0; w < 5; w++) {
+            const lo = w * 7 + 1;
+            if (lo > lastDay) break;
+            const hi = w === 4 ? lastDay : Math.min(w * 7 + 7, lastDay);
+            const inWeek = days.filter(d => d.day >= lo && d.day <= hi);
+            const avg = inWeek.length
+                ? inWeek.reduce((a, d) => a + d.avg, 0) / inWeek.length
+                : null;
+            weeks.push({
+                label: `${lo}–${hi}`,
+                avg,
+                n: inWeek.length,
+                delta: (avg != null && prevAvg != null) ? avg - prevAvg : null
+            });
+            if (avg != null) prevAvg = avg;
+        }
+
+        // Least-squares fit over daily averages -> lbs/week rate and a
+        // projected end-of-month weight (projection only meaningful while
+        // the month is still in progress).
+        let rate = null;
+        let projected = null;
+        if (days.length >= 2) {
+            const n = days.length;
+            const sx = days.reduce((a, d) => a + d.day, 0);
+            const sy = days.reduce((a, d) => a + d.avg, 0);
+            const sxx = days.reduce((a, d) => a + d.day * d.day, 0);
+            const sxy = days.reduce((a, d) => a + d.day * d.avg, 0);
+            const denom = n * sxx - sx * sx;
+            if (denom !== 0) {
+                const slope = (n * sxy - sx * sy) / denom;
+                const intercept = (sy - slope * sx) / n;
+                rate = slope * 7;
+                const p = intercept + slope * lastDay;
+                // Two clustered early points can produce a wild line — only
+                // show projections that are physically plausible.
+                if (p >= 120 && p <= 350) projected = p;
+            }
+        }
+
+        return {
+            count: vals.length,
+            avg: (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1),
+            min: Math.min(...vals).toFixed(1),
+            max: Math.max(...vals).toFixed(1),
+            change: (vals[vals.length - 1] - vals[0]).toFixed(1),
+            weeks,
+            rate,
+            projected: isCurrent ? projected : null,
+            isCurrent,
+            monthEndLabel: monthStart.toLocaleString('default', { month: 'short' }) + ' ' + lastDay
+        };
+    }, [weightEntries, dateRange]);
+
     // Helper function to parse pace string (e.g., "8:30") to decimal value
     const parsePaceString = (paceString) => {
         if (!paceString) return 0;
@@ -1919,9 +2258,19 @@ const WorkoutChart = () => {
             {/* Mode Toggle Button */}
             <button
                 className="mode-toggle-button"
-                onClick={() => { setMode(mode === 'strength' ? 'cardio' : 'strength'); if (chartInstance.current) chartInstance.current.options.scales.y.reverse = false; }}
+                onClick={() => {
+                    // strength <-> cardio; from weight mode, return to
+                    // whichever of the two was active before
+                    const target = mode === 'strength' ? 'cardio'
+                        : mode === 'cardio' ? 'strength'
+                        : lastNonWeightMode.current;
+                    setMode(target);
+                    if (chartInstance.current) chartInstance.current.options.scales.y.reverse = false;
+                }}
             >
-                {mode === 'strength' ? 'Cardio' : 'Strength'}
+                {mode === 'strength' ? 'Cardio'
+                    : mode === 'cardio' ? 'Strength'
+                    : modeLabel[lastNonWeightMode.current]}
             </button>
             {/* Metric Toggle - only visible in cardio mode */}
             {mode === 'cardio' && (
@@ -1962,9 +2311,25 @@ const WorkoutChart = () => {
                         })}
                 </div>
             )}
+            {/* Weight mode — its own dedicated button on the right, separate
+                from the strength/cardio pair (mobile placement; the desktop
+                twin lives in the chart column, same show/hide pattern as the
+                mobile legend) */}
+            <button
+                className={`weight-mode-button weight-mode-button-mobile ${mode === 'weight' ? 'active' : ''}`}
+                onClick={toggleWeightMode}
+            >
+                Weight
+            </button>
             </div>
 
             <div className="chart-and-title" style={{ display: 'flex', flexDirection: 'column' }}>
+                <button
+                    className={`weight-mode-button weight-mode-button-desktop ${mode === 'weight' ? 'active' : ''}`}
+                    onClick={toggleWeightMode}
+                >
+                    Weight
+                </button>
                 {/* Title Area for Month and Year (desktop only) */}
                 <div className="month-year-title" style={{
                     marginBottom: '8px',
@@ -2004,7 +2369,8 @@ const WorkoutChart = () => {
 
             {/* Right: Filters Container */}
             <div className={`filters-container ${isFilterDrawerOpen ? 'drawer-open' : ''}`}>
-                {/* Search input above the scrollable area */}
+                {/* Search input above the scrollable area (not needed in weight mode) */}
+                {mode !== 'weight' && (
                 <div className="search-container">
                     <input
                         type="text"
@@ -2022,11 +2388,74 @@ const WorkoutChart = () => {
                         </button>
                     )}
                 </div>
+                )}
 
                 {/* Scrollable area for activities */}
                 {/* Scrollable area for activities */}
                 <div className="filters-panel">
-                    {mode === 'strength' ? (
+                    {mode === 'weight' ? (
+                        // Weight mode: month summary instead of filters
+                        weightSummary ? (
+                            <>
+                            <div className="weight-summary">
+                                <div className="weight-summary-title">Month Summary</div>
+                                <div className="weight-summary-row">
+                                    <span>Weigh-ins</span><span>{weightSummary.count}</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Average</span><span>{weightSummary.avg} lbs</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Lowest</span><span>{weightSummary.min} lbs</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Highest</span><span>{weightSummary.max} lbs</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Change</span>
+                                    <span style={{ color: parseFloat(weightSummary.change) <= 0 ? '#93c47d' : '#f44336' }}>
+                                        {parseFloat(weightSummary.change) > 0 ? '+' : ''}{weightSummary.change} lbs
+                                    </span>
+                                </div>
+                                {weightSummary.rate != null && (
+                                    <div className="weight-summary-row">
+                                        <span>Rate</span>
+                                        <span style={{ color: weightSummary.rate <= 0 ? '#93c47d' : '#f44336' }}>
+                                            {weightSummary.rate > 0 ? '+' : ''}{weightSummary.rate.toFixed(1)} lbs/wk
+                                        </span>
+                                    </div>
+                                )}
+                                {weightSummary.projected != null && (
+                                    <div className="weight-summary-row">
+                                        <span>Proj. {weightSummary.monthEndLabel}</span>
+                                        <span style={{ color: WEIGHT_COLOR }}>{weightSummary.projected.toFixed(1)} lbs</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="weight-summary">
+                                <div className="weight-summary-title">Weekly Trend</div>
+                                {weightSummary.weeks.map((wk, i) => (
+                                    <div className="weight-summary-row" key={i}>
+                                        <span>{wk.label}</span>
+                                        <span>
+                                            {wk.avg != null ? `${wk.avg.toFixed(1)}` : '—'}
+                                            {wk.delta != null && (
+                                                <span
+                                                    className="weight-week-delta"
+                                                    style={{ color: wk.delta <= 0 ? '#93c47d' : '#f44336' }}
+                                                >
+                                                    {wk.delta <= 0 ? '▼' : '▲'}{Math.abs(wk.delta).toFixed(1)}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                            </>
+                        ) : (
+                            <div className="no-results">No weight data this month</div>
+                        )
+                    ) : mode === 'strength' ? (
                         // Strength mode activities
                         displayedActivities.map(activity => {
                             const exercise = exercises[activity.id];

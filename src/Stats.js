@@ -465,6 +465,10 @@ const Stats = ({ exercises, cardioExercises }) => {
                         className={`stats-mode-btn ${mode === 'cardio' ? 'active' : ''}`}
                         onClick={() => setMode('cardio')}
                     >Cardio</button>
+                    <button
+                        className={`stats-mode-btn ${mode === 'weight' ? 'active' : ''}`}
+                        onClick={() => setMode('weight')}
+                    >Weight</button>
                 </div>
                 <select
                     className="stats-range-select"
@@ -515,12 +519,6 @@ const Stats = ({ exercises, cardioExercises }) => {
                     )}
                 </div>
                 )}
-                {/* Weight records — dedicated button on the right, separate
-                    from the strength/cardio pair */}
-                <button
-                    className={`stats-weight-btn ${mode === 'weight' ? 'active' : ''}`}
-                    onClick={() => setMode(mode === 'weight' ? 'strength' : 'weight')}
-                >Weight</button>
             </div>
 
             {mode === 'strength' && (

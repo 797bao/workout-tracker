@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Chart, registerables } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, query, orderByKey, startAt, endAt } from 'firebase/database';
+// `set` is aliased: date-fns already exports a `set` into this module below.
+import { getDatabase, ref, onValue, query, orderByKey, startAt, endAt, set as dbSet } from 'firebase/database';
+import { getAuth, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import './WorkoutChart.css';
 import { set } from 'date-fns';
 import Stats from './Stats';
@@ -30,6 +32,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
+const auth = getAuth(app);
 let today = new Date();
 let currentDay = today.getDate().toString();
 let isCurrentMonth;
@@ -146,18 +149,20 @@ const WorkoutChart = () => {
 
     // State variables
     const [page, setPage] = useState('chart'); // 'chart' or 'stats'
-    const [mode, setMode] = useState('strength'); // 'strength', 'cardio' or 'weight'
+    const [mode, setMode] = useState('strength'); // 'strength' | 'cardio' | 'weight' | 'calories'
 
-    // Strength <-> cardio share the left toggle (and Tab). Weight is its own
-    // dedicated button on the right; entering it remembers which of the two
-    // you came from so leaving returns you there.
-    const modeLabel = { strength: 'Strength', cardio: 'Cardio', weight: 'Weight' };
+    // Strength <-> cardio share the left toggle (and Tab). Weight and Calories
+    // are dedicated buttons on the right; entering either remembers which of
+    // the two you came from so leaving returns you there.
+    const modeLabel = { strength: 'Strength', cardio: 'Cardio', weight: 'Weight', calories: 'Calories' };
+    const SIDE_MODES = ['weight', 'calories'];
+    const isSideMode = (m) => SIDE_MODES.includes(m);
     const lastNonWeightMode = useRef('strength');
 
-    const toggleWeightMode = () => {
-        if (mode !== 'weight') {
-            lastNonWeightMode.current = mode;
-            setMode('weight');
+    const toggleSideMode = (target) => {
+        if (mode !== target) {
+            if (!isSideMode(mode)) lastNonWeightMode.current = mode;
+            setMode(target);
         } else {
             setMode(lastNonWeightMode.current);
         }
@@ -278,6 +283,17 @@ const WorkoutChart = () => {
     // (written by the Withings pipeline), fetched per selected month.
     const [weightEntries, setWeightEntries] = useState({});
 
+    // Calorie mode: calorieLog/<YYYY-MM-DD>/<pushId> -> { kcal, time } for the
+    // month, plus the whole (tiny) calorieGoals map. Goals are date-keyed and
+    // effective-from, so each day is measured against the goal in force then.
+    const [calorieEntries, setCalorieEntries] = useState({});
+    const [calorieGoals, setCalorieGoals] = useState({});
+    const [goalDraft, setGoalDraft] = useState('');
+    const [goalStatus, setGoalStatus] = useState(null); // {ok, text}
+    // RTDB reads are public but writes require auth, so the goal editor only
+    // saves when the page was opened with a custom token (widget / Electron).
+    const [canWriteGoal, setCanWriteGoal] = useState(false);
+
     // ... [rest of existing state and useEffects]
 
     // Filter activities based on search term
@@ -342,6 +358,31 @@ const WorkoutChart = () => {
         };
     }, []);
 
+    // Sign in with the custom token the widget/Electron appends to the URL, so
+    // the goal editor can write. Charts still read fine without it. The token
+    // is stripped from the address bar once consumed.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('authToken');
+        if (token) {
+            signInWithCustomToken(auth, token).catch(err =>
+                console.warn('custom-token sign-in failed:', err.message));
+            params.delete('authToken');
+            const rest = params.toString();
+            window.history.replaceState({}, '',
+                window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+        }
+        return onAuthStateChanged(auth, user => setCanWriteGoal(!!user));
+    }, []);
+
+    // calorieGoals is a tiny date->kcal map; keep it live regardless of mode so
+    // the editor and the chart's goal line always agree.
+    useEffect(() => {
+        return onValue(ref(database, 'calorieGoals'), (snapshot) => {
+            setCalorieGoals(snapshot.val() || {});
+        });
+    }, []);
+
     // Add this useEffect near the other useEffects in your WorkoutChart component
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -357,7 +398,7 @@ const WorkoutChart = () => {
                         chartInstance.current.options.scales.y.reverse = false;
                     }
 
-                    if (prevMode === 'weight') return lastNonWeightMode.current;
+                    if (isSideMode(prevMode)) return lastNonWeightMode.current;
                     return prevMode === 'strength' ? 'cardio' : 'strength';
                 });
             }
@@ -411,6 +452,21 @@ const WorkoutChart = () => {
             const unsubscribe = onValue(cardioMonthRef, (snapshot) => {
                 const monthData = snapshot.val() || {};
                 setCardioWorkouts(monthData);
+            });
+
+            return () => unsubscribe();
+        } else if (mode === 'calories') {
+            // Same YYYY-MM-DD key shape as weightLog, so the same range works.
+            console.log(`Fetching calorie log for ${year}-${month}`);
+            const calorieQuery = query(
+                ref(database, 'calorieLog'),
+                orderByKey(),
+                startAt(`${year}-${month}-01`),
+                endAt(`${year}-${month}-31`)
+            );
+
+            const unsubscribe = onValue(calorieQuery, (snapshot) => {
+                setCalorieEntries(snapshot.val() || {});
             });
 
             return () => unsubscribe();
@@ -965,7 +1021,7 @@ const WorkoutChart = () => {
         // Chart.js can't change type in place — destroy across the boundary
         // so the mode's update function recreates with the right type.
         if (chartInstance.current) {
-            const wantedType = mode === 'weight' ? 'line' : 'bubble';
+            const wantedType = isSideMode(mode) ? 'line' : 'bubble';
             if (chartInstance.current.config.type !== wantedType) {
                 chartInstance.current.destroy();
                 chartInstance.current = null;
@@ -981,6 +1037,8 @@ const WorkoutChart = () => {
             // bubble first, then let cardio restyle it.
             if (!chartInstance.current) updateStrengthChart();
             updateCardioChart();
+        } else if (mode === 'calories') {
+            updateCalorieChart();
         } else {
             updateWeightChart();
         }
@@ -998,9 +1056,10 @@ const WorkoutChart = () => {
     const updateChartMode = () => {
         if (!chartInstance.current) return;
 
-        if (mode === 'weight') {
-            // Single dataset — no legend needed
-            chartInstance.current.options.plugins.legend.display = false;
+        if (isSideMode(mode)) {
+            // Weight is a single dataset; calories draws its own legend
+            // (intake vs goal) inside updateCalorieChart.
+            chartInstance.current.options.plugins.legend.display = mode === 'calories';
             chartInstance.current.update();
             return;
         }
@@ -1958,6 +2017,267 @@ const WorkoutChart = () => {
         }
     };
 
+    // ----- Calorie mode: daily intake vs the goal in force that day -----
+    const CALORIE_COLOR = '#93c47d';
+    const CALORIE_OVER_COLOR = '#f44336';
+    const GOAL_COLOR = '#ffad3f';
+
+    /** The goal effective on `dateKey`: latest calorieGoals entry <= that date. */
+    const goalForDate = (dateKey) => {
+        const keys = Object.keys(calorieGoals).filter(k => k <= dateKey).sort();
+        return keys.length ? Number(calorieGoals[keys[keys.length - 1]]) : null;
+    };
+
+    /** One total per day, with the day's goal attached. */
+    const calorieDays = useMemo(() => {
+        return Object.keys(calorieEntries).sort().map(dateKey => {
+            const entries = calorieEntries[dateKey] || {};
+            const total = Object.keys(entries).reduce((sum, k) => {
+                const v = entries[k];
+                return sum + (v && typeof v.kcal === 'number' ? v.kcal : 0);
+            }, 0);
+            return {
+                dateKey,
+                day: parseInt(dateKey.slice(8), 10),
+                total,
+                count: Object.keys(entries).length,
+                goal: goalForDate(dateKey)
+            };
+        }).filter(d => d.count > 0);
+    }, [calorieEntries, calorieGoals]);
+
+    const updateCalorieChart = () => {
+        const chartContext = chartRef.current?.getContext('2d');
+        if (!chartContext) return;
+
+        const toPoint = (d) => {
+            const [yy, mm, dd] = d.dateKey.split('-').map(n => parseInt(n, 10));
+            return { x: new Date(yy, mm - 1, dd).getTime(), y: d.total, ...d };
+        };
+        const dataPoints = calorieDays.map(toPoint);
+
+        // Goal line spans the whole month so it reads as a target even on days
+        // with no intake logged.
+        const monthStart = dateRange.startDate;
+        const lastDay = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+        const goalPoints = [];
+        for (let d = 1; d <= lastDay; d++) {
+            const dateKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const g = goalForDate(dateKey);
+            if (g != null) goalPoints.push({ x: new Date(monthStart.getFullYear(), monthStart.getMonth(), d).getTime(), y: g });
+        }
+
+        const hasData = dataPoints.length > 0;
+        const maxY = Math.max(
+            3000,
+            ...dataPoints.map(p => p.y),
+            ...goalPoints.map(p => p.y)
+        );
+
+        const chartData = {
+            datasets: [
+                {
+                    label: 'Intake',
+                    data: dataPoints,
+                    borderColor: CALORIE_COLOR,
+                    backgroundColor: 'rgba(147, 196, 125, 0.15)',
+                    // Days over that day's goal get a red dot — the overage is
+                    // visible without reading the goal line.
+                    pointBackgroundColor: (ctx) => {
+                        const p = ctx.raw;
+                        return (p && p.goal != null && p.y > p.goal) ? CALORIE_OVER_COLOR : CALORIE_COLOR;
+                    },
+                    pointBorderColor: (ctx) => {
+                        const p = ctx.raw;
+                        return (p && p.goal != null && p.y > p.goal) ? CALORIE_OVER_COLOR : CALORIE_COLOR;
+                    },
+                    pointRadius: 3.5,
+                    pointHoverRadius: 5.5,
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: false,
+                    spanGaps: true
+                },
+                {
+                    label: 'Goal',
+                    data: goalPoints,
+                    borderColor: GOAL_COLOR,
+                    borderDash: [6, 4],
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    tension: 0,
+                    fill: false
+                }
+            ]
+        };
+
+        const tooltipCallbacks = {
+            title: (items) => {
+                if (!items.length) return '';
+                const raw = items[0].raw;
+                if (!raw) return '';
+                return new Date(raw.x).toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric'
+                });
+            },
+            label: (context) => {
+                const raw = context.raw;
+                if (!raw) return [];
+                if (context.dataset.label === 'Goal') return [`Goal: ${raw.y}`];
+                const lines = [`${raw.y} kcal in ${raw.count} ${raw.count === 1 ? 'entry' : 'entries'}`];
+                if (raw.goal != null) {
+                    const diff = raw.y - raw.goal;
+                    lines.push(diff > 0 ? `${diff} over goal` : `${Math.abs(diff)} left of ${raw.goal}`);
+                }
+                return lines;
+            }
+        };
+
+        if (chartInstance.current) {
+            chartInstance.current.data = chartData;
+            chartInstance.current.options.scales.y.min = 0;
+            chartInstance.current.options.scales.y.max = Math.ceil(maxY / 500) * 500;
+            chartInstance.current.options.scales.y.title = { display: !isMobileView, text: 'Calories (kcal)' };
+            chartInstance.current.options.plugins.legend = { display: true, labels: { color: '#ddd', boxWidth: 12 } };
+            chartInstance.current.options.plugins.title = hasData
+                ? { display: false }
+                : { display: true, text: 'No calories logged this month', color: '#888', font: { size: 16 } };
+            chartInstance.current.options.plugins.tooltip.callbacks = tooltipCallbacks;
+            chartInstance.current.update();
+        } else {
+            chartInstance.current = new Chart(chartContext, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    maintainAspectRatio: false,
+                    animation: { duration: 100 },
+                    elements: { point: { hitRadius: isMobileView ? 14 : 6 } },
+                    interaction: { mode: 'nearest', intersect: false },
+                    scales: {
+                        y: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)',
+                                lineWidth: 1,
+                                zeroLineColor: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            min: 0,
+                            max: Math.ceil(maxY / 500) * 500,
+                            title: { display: !isMobileView, text: 'Calories (kcal)' },
+                            ticks: {
+                                display: !isMobileView,
+                                font: { size: 13 },
+                                stepSize: 500
+                            }
+                        },
+                        x: {
+                            offset: true,
+                            grid: {
+                                color: (context) =>
+                                    (isCurrentMonth && context.tick.label[0] === currentDay) ? '#b4a4da' : '#636363',
+                                lineWidth: (context) =>
+                                    (isCurrentMonth && context.tick.label[0] === currentDay) ? 0.35 : 0.13,
+                                zeroLineColor: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            type: 'time',
+                            time: { unit: 'day', displayFormats: { day: 'd' } },
+                            min: new Date(dateRange.startDate.getFullYear(), dateRange.startDate.getMonth(), 1).getTime(),
+                            max: new Date(dateRange.startDate.getFullYear(), dateRange.startDate.getMonth() + 1, 0).getTime(),
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 0,
+                                minRotation: 0,
+                                font: { size: 12 },
+                                color: (context) =>
+                                    context.tick.label[0] === currentDay && isCurrentMonth ? '#b4a4da' : '#636363',
+                                callback: function (value) {
+                                    const date = new Date(value);
+                                    return [`${date.getDate()}`, `${date.toLocaleDateString('en-US', { weekday: 'short' })}`];
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0e0',
+                            bodyFont: { size: 14.25 },
+                            callbacks: tooltipCallbacks
+                        },
+                        legend: { display: true, labels: { color: '#ddd', boxWidth: 12 } },
+                        title: hasData
+                            ? { display: false }
+                            : { display: true, text: 'No calories logged this month', color: '#888', font: { size: 16 } }
+                    }
+                }
+            });
+        }
+    };
+
+    // Month summary for calorie mode — mirrors the weight panel's shape.
+    const calorieSummary = useMemo(() => {
+        if (calorieDays.length === 0) return null;
+        const totals = calorieDays.map(d => d.total);
+        const sum = totals.reduce((a, b) => a + b, 0);
+        const avg = sum / totals.length;
+        const withGoal = calorieDays.filter(d => d.goal != null);
+        const over = withGoal.filter(d => d.total > d.goal).length;
+        const under = withGoal.length - over;
+        // Net vs goal across logged days: negative means a deficit overall.
+        const net = withGoal.reduce((a, d) => a + (d.total - d.goal), 0);
+
+        const monthStart = dateRange.startDate;
+        const lastDay = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+        const weeks = [];
+        for (let w = 0; w < 5; w++) {
+            const lo = w * 7 + 1;
+            if (lo > lastDay) break;
+            const hi = w === 4 ? lastDay : Math.min(w * 7 + 7, lastDay);
+            const inWeek = calorieDays.filter(d => d.day >= lo && d.day <= hi);
+            weeks.push({
+                label: `${lo}–${hi}`,
+                avg: inWeek.length ? inWeek.reduce((a, d) => a + d.total, 0) / inWeek.length : null,
+                n: inWeek.length
+            });
+        }
+
+        return {
+            daysLogged: calorieDays.length,
+            avg: avg.toFixed(0),
+            total: sum,
+            highest: Math.max(...totals),
+            lowest: Math.min(...totals),
+            over,
+            under,
+            net,
+            weeks
+        };
+    }, [calorieDays, dateRange]);
+
+    // Current goal + save handler for the right-side editor.
+    const todayKey = useMemo(() => {
+        const n = new Date();
+        return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    }, []);
+    const currentGoal = goalForDate(todayKey);
+
+    const saveGoal = async () => {
+        const n = Number(goalDraft);
+        if (!Number.isInteger(n) || n <= 0 || n > 20000) {
+            setGoalStatus({ ok: false, text: 'Enter a whole number 1–20000' });
+            return;
+        }
+        try {
+            // Written effective-from today, so earlier days keep their old goal.
+            await dbSet(ref(database, `calorieGoals/${todayKey}`), n);
+            setGoalStatus({ ok: true, text: `Goal set to ${n}` });
+            setGoalDraft('');
+        } catch (e) {
+            setGoalStatus({ ok: false, text: 'Save failed — not signed in' });
+        }
+    };
+
     // Month summary + weekly trend + trajectory, shown in the right panel
     // while in weight mode.
     const weightSummary = useMemo(() => {
@@ -2315,21 +2635,37 @@ const WorkoutChart = () => {
                 from the strength/cardio pair (mobile placement; the desktop
                 twin lives in the chart column, same show/hide pattern as the
                 mobile legend) */}
-            <button
-                className={`weight-mode-button weight-mode-button-mobile ${mode === 'weight' ? 'active' : ''}`}
-                onClick={toggleWeightMode}
-            >
-                Weight
-            </button>
-            </div>
-
-            <div className="chart-and-title" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="side-mode-buttons side-mode-buttons-mobile">
                 <button
-                    className={`weight-mode-button weight-mode-button-desktop ${mode === 'weight' ? 'active' : ''}`}
-                    onClick={toggleWeightMode}
+                    className={`weight-mode-button weight-mode-button-mobile ${mode === 'weight' ? 'active' : ''}`}
+                    onClick={() => toggleSideMode('weight')}
                 >
                     Weight
                 </button>
+                <button
+                    className={`weight-mode-button weight-mode-button-mobile calorie-mode-button ${mode === 'calories' ? 'active' : ''}`}
+                    onClick={() => toggleSideMode('calories')}
+                >
+                    Calories
+                </button>
+            </div>
+            </div>
+
+            <div className="chart-and-title" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="side-mode-buttons side-mode-buttons-desktop">
+                    <button
+                        className={`weight-mode-button weight-mode-button-desktop ${mode === 'weight' ? 'active' : ''}`}
+                        onClick={() => toggleSideMode('weight')}
+                    >
+                        Weight
+                    </button>
+                    <button
+                        className={`weight-mode-button weight-mode-button-desktop calorie-mode-button ${mode === 'calories' ? 'active' : ''}`}
+                        onClick={() => toggleSideMode('calories')}
+                    >
+                        Calories
+                    </button>
+                </div>
                 {/* Title Area for Month and Year (desktop only) */}
                 <div className="month-year-title" style={{
                     marginBottom: '8px',
@@ -2370,7 +2706,7 @@ const WorkoutChart = () => {
             {/* Right: Filters Container */}
             <div className={`filters-container ${isFilterDrawerOpen ? 'drawer-open' : ''}`}>
                 {/* Search input above the scrollable area (not needed in weight mode) */}
-                {mode !== 'weight' && (
+                {!isSideMode(mode) && (
                 <div className="search-container">
                     <input
                         type="text"
@@ -2393,7 +2729,89 @@ const WorkoutChart = () => {
                 {/* Scrollable area for activities */}
                 {/* Scrollable area for activities */}
                 <div className="filters-panel">
-                    {mode === 'weight' ? (
+                    {mode === 'calories' ? (
+                        <>
+                        {/* Goal editor sits at the top of the right rail */}
+                        <div className="weight-summary calorie-goal-card">
+                            <div className="weight-summary-title">Calorie Goal</div>
+                            <div className="calorie-goal-current">
+                                {currentGoal != null ? currentGoal : '—'}
+                                <span className="calorie-goal-unit">kcal / day</span>
+                            </div>
+                            <div className="calorie-goal-edit">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="20000"
+                                    step="1"
+                                    placeholder="New goal"
+                                    value={goalDraft}
+                                    onChange={(e) => { setGoalDraft(e.target.value); setGoalStatus(null); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') saveGoal(); }}
+                                    disabled={!canWriteGoal}
+                                />
+                                <button onClick={saveGoal} disabled={!canWriteGoal || !goalDraft}>Set</button>
+                            </div>
+                            {goalStatus && (
+                                <div className={`calorie-goal-status ${goalStatus.ok ? 'ok' : 'err'}`}>
+                                    {goalStatus.text}
+                                </div>
+                            )}
+                            {!canWriteGoal && (
+                                <div className="calorie-goal-status">
+                                    Read-only here — open from the widget to edit
+                                </div>
+                            )}
+                            <div className="calorie-goal-note">
+                                Applies from today onward; past days keep their goal.
+                            </div>
+                        </div>
+                        {calorieSummary ? (
+                            <>
+                            <div className="weight-summary">
+                                <div className="weight-summary-title">Month Summary</div>
+                                <div className="weight-summary-row">
+                                    <span>Days logged</span><span>{calorieSummary.daysLogged}</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Average</span><span>{calorieSummary.avg} kcal</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Lowest</span><span>{calorieSummary.lowest} kcal</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Highest</span><span>{calorieSummary.highest} kcal</span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Under / over</span>
+                                    <span>
+                                        <span style={{ color: '#93c47d' }}>{calorieSummary.under}</span>
+                                        {' / '}
+                                        <span style={{ color: '#f44336' }}>{calorieSummary.over}</span>
+                                    </span>
+                                </div>
+                                <div className="weight-summary-row">
+                                    <span>Net vs goal</span>
+                                    <span style={{ color: calorieSummary.net <= 0 ? '#93c47d' : '#f44336' }}>
+                                        {calorieSummary.net > 0 ? '+' : ''}{calorieSummary.net} kcal
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="weight-summary">
+                                <div className="weight-summary-title">Weekly Average</div>
+                                {calorieSummary.weeks.map((wk, i) => (
+                                    <div className="weight-summary-row" key={i}>
+                                        <span>{wk.label}</span>
+                                        <span>{wk.avg != null ? wk.avg.toFixed(0) : '—'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            </>
+                        ) : (
+                            <div className="no-results">No calories logged this month</div>
+                        )}
+                        </>
+                    ) : mode === 'weight' ? (
                         // Weight mode: month summary instead of filters
                         weightSummary ? (
                             <>

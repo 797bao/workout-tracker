@@ -549,15 +549,123 @@ html, body {
   position: relative;
 }
 
-.weight-mode-button-desktop {
+/* Weight + Calories stack as a pair in the top-right of the chart column */
+.side-mode-buttons-desktop {
   position: absolute;
   top: 20px;
   right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
 }
 
-/* Mobile twin hidden on desktop (shown in the controls row on mobile) */
+.weight-mode-button-desktop {
+  position: relative;
+}
+
+/* Calories reuses the pill but in its own colour so the two read apart */
+.calorie-mode-button {
+  border-color: #93c47d;
+  color: #93c47d;
+}
+
+.calorie-mode-button:hover {
+  background-color: rgba(147, 196, 125, 0.18);
+}
+
+.calorie-mode-button.active {
+  background-color: #93c47d;
+  color: #1e1e1e;
+}
+
+/* Mobile twins hidden on desktop (shown in the controls row on mobile) */
+.side-mode-buttons-mobile {
+  display: none;
+}
+
 .weight-mode-button-mobile {
   display: none;
+}
+
+/* ----- Calorie goal editor (right rail, calories mode) ----- */
+.calorie-goal-current {
+  font-size: 26px;
+  font-weight: bold;
+  color: #93c47d;
+  text-align: center;
+  padding: 4px 0 2px;
+}
+
+.calorie-goal-unit {
+  display: block;
+  font-size: 11px;
+  font-weight: normal;
+  color: #888;
+}
+
+.calorie-goal-edit {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.calorie-goal-edit input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #fff;
+  background-color: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 5px;
+  outline: none;
+}
+
+.calorie-goal-edit input:focus {
+  border-color: #93c47d;
+}
+
+.calorie-goal-edit input:disabled {
+  opacity: 0.45;
+}
+
+.calorie-goal-edit button {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #1e1e1e;
+  background-color: #93c47d;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.calorie-goal-edit button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.calorie-goal-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+}
+
+.calorie-goal-status.ok {
+  color: #93c47d;
+}
+
+.calorie-goal-status.err {
+  color: #f44336;
+}
+
+.calorie-goal-note {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+  line-height: 1.35;
 }
 
 /* Metric Toggle Buttons (Distance/Pace) */
@@ -971,21 +1079,36 @@ html, body {
     flex-shrink: 0;
   }
 
-  /* Weight button rides the right edge of the controls row; the desktop
-     twin (absolute in the chart column) is hidden here */
+  /* Weight + Calories ride the right edge of the controls row; the desktop
+     twins (absolute in the chart column) are hidden here */
+  .side-mode-buttons-mobile {
+    display: flex;
+    grid-column: 3;
+    gap: 6px;
+  }
+
+  /* Two pills have to share the slot one used to own, so they run tighter
+     here — at 375px the row is Cardio + legend + Weight + Calories. */
   .weight-mode-button-mobile {
     display: block;
-    grid-column: 3;
     position: relative !important;
     top: unset !important;
     right: unset !important;
     width: auto !important;
-    padding: 8px 16px !important;
-    height: 34px !important;
-    font-size: 13px !important;
+    padding: 6px 9px !important;
+    height: 32px !important;
+    font-size: 11.5px !important;
+    white-space: nowrap;
   }
 
-  .weight-mode-button-desktop {
+  /* Legend yields first if the row still overflows, rather than pushing
+     the Calories pill off-screen */
+  .mobile-controls-row .mobile-legend {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .side-mode-buttons-desktop {
     display: none !important;
   }
 

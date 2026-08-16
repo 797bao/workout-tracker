@@ -1838,6 +1838,18 @@ const WorkoutChart = () => {
     const WEIGHT_Y_MIN = 165;
     const WEIGHT_Y_MAX = 235;
 
+    // Withings writes weigh-in times as 24-hour "HH:mm"; everything shown to
+    // the user reads as 12-hour AM/PM, so convert on display.
+    const to12Hour = (raw) => {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(raw).trim());
+        if (!m) return raw;
+        const hour24 = Number(m[1]);
+        if (!Number.isFinite(hour24) || hour24 > 23) return raw;
+        const suffix = hour24 < 12 ? 'AM' : 'PM';
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        return `${hour12}:${m[2]} ${suffix}`;
+    };
+
     const createWeightTooltipCallback = () => {
         return {
             title: function (items) {
@@ -1852,7 +1864,7 @@ const WorkoutChart = () => {
                 const raw = context.raw;
                 if (!raw) return [];
                 const lines = [`${raw.lbs} lbs${raw.kg ? ` (${raw.kg} kg)` : ''}`];
-                if (raw.time) lines.push(`Time: ${raw.time}`);
+                if (raw.time) lines.push(`Time: ${to12Hour(raw.time)}`);
                 return lines;
             }
         };

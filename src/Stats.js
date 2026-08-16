@@ -17,6 +17,8 @@ const MUSCLE_GROUPS = {
     "Lower Legs": { color: "#cadcfd", order: 7 }
 };
 const CALISTHENICS = new Set(["Dips", "Push Ups", "Pull Ups", "Chin Ups", "Nordic Curls", "Sit Ups", "Hangs"]);
+// Matches the Calories pill and intake line on the chart page
+const CAL_COLOR = '#93c47d';
 const CARDIO_ORDER = ['Elliptical', 'Treadmill', 'Jogging', 'Mission Peak', 'Summit'];
 // Hangs are logged in SECONDS (a 60 in the reps field = a 60-second hang).
 const TIMED_EXERCISES = new Set(['Hangs']);
@@ -151,6 +153,7 @@ const Stats = ({ exercises, cardioExercises }) => {
     const [strengthRows, setStrengthRows] = useState([]);   // {dateKey, exerciseId, weight, reps}
     const [cardioRows, setCardioRows] = useState([]);       // {dateKey, activityId, distance, mins, pace, mph, resistance}
     const [weightRows, setWeightRows] = useState([]);       // {dateKey, lbs, kg, time}
+    const [calorieRows, setCalorieRows] = useState([]);     // {dateKey, total, count, goal, diff} — one per day
 
     // Per-cardio-card filters: { [activityId]: { metric, duration, resistance } }
     const [cardioFilters, setCardioFilters] = useState({});
@@ -161,7 +164,9 @@ const Stats = ({ exercises, cardioExercises }) => {
             get(ref(database, 'workouts')),
             get(ref(database, 'cardio')),
             get(ref(database, 'weightLog')),
-        ]).then(([wSnap, cSnap, wtSnap]) => {
+            get(ref(database, 'calorieLog')),
+            get(ref(database, 'calorieGoals')),
+        ]).then(([wSnap, cSnap, wtSnap, calSnap, goalSnap]) => {
             if (cancelled) return;
 
             const sRows = [];
@@ -221,6 +226,39 @@ const Stats = ({ exercises, cardioExercises }) => {
                 }
             }
             wtRows.sort((a, b) => (a.dateKey < b.dateKey ? -1 : 1));
+
+            // calorieLog/<YYYY-MM-DD>/<pushId> -> { kcal, time }, one row per
+            // DAY (totals are what records are about). calorieGoals is a sparse
+            // effective-from map, so each day is scored against the goal that
+            // was actually in force then.
+            const goalsMap = goalSnap.val() || {};
+            const goalDates = Object.keys(goalsMap).sort();
+            const goalFor = (isoDate) => {
+                let g = null;
+                for (const d of goalDates) {
+                    if (d <= isoDate) g = Number(goalsMap[d]);
+                    else break;
+                }
+                return g;
+            };
+            const calRows = [];
+            for (const [isoDate, entries] of Object.entries(calSnap.val() || {})) {
+                const items = Object.keys(entries || {}).sort()
+                    .map((k) => entries[k])
+                    .filter((v) => v && typeof v.kcal === 'number');
+                if (items.length === 0) continue;
+                const total = items.reduce((a, v) => a + v.kcal, 0);
+                const goal = goalFor(isoDate);
+                calRows.push({
+                    dateKey: isoDate.replace(/-/g, ''),
+                    total,
+                    count: items.length,
+                    goal,
+                    diff: goal != null ? total - goal : null,
+                });
+            }
+            calRows.sort((a, b) => (a.dateKey < b.dateKey ? -1 : 1));
+            setCalorieRows(calRows);
 
             setStrengthRows(sRows);
             setCardioRows(cRows);
@@ -433,6 +471,83 @@ const Stats = ({ exercises, cardioExercises }) => {
         };
     }, [weightRows, startKey, endKey]);
 
+    /* ── Calorie records ── */
+    const calorieStats = useMemo(() => {
+        const inRange = calorieRows.filter((r) => r.dateKey >= startKey && r.dateKey <= endKey);
+        if (inRange.length === 0) return null;
+
+        // Same tie convention as the other tabs: collapse equal values, keep
+        // the earliest date, show how many times it was hit.
+        const collapseByValue = (sorted, valueOf) => {
+            const byVal = new Map();
+            const order = [];
+            for (const r of sorted) {
+                const v = valueOf(r);
+                const existing = byVal.get(v);
+                if (existing) {
+                    existing.count += 1;
+                    if (r.dateKey < existing.dateKey) existing.dateKey = r.dateKey;
+                } else {
+                    byVal.set(v, { ...r, count: 1 });
+                    order.push(v);
+                }
+            }
+            return order.slice(0, 5).map((v) => byVal.get(v));
+        };
+
+        const lowest = collapseByValue(
+            [...inRange].sort((a, b) => a.total - b.total || (a.dateKey < b.dateKey ? -1 : 1)), (r) => r.total);
+        const highest = collapseByValue(
+            [...inRange].sort((a, b) => b.total - a.total || (a.dateKey < b.dateKey ? -1 : 1)), (r) => r.total);
+
+        // Biggest deficit = most under the goal in force that day.
+        const withGoal = inRange.filter((r) => r.diff != null);
+        const deficits = collapseByValue(
+            withGoal.filter((r) => r.diff < 0).sort((a, b) => a.diff - b.diff || (a.dateKey < b.dateKey ? -1 : 1)),
+            (r) => r.diff);
+
+        const toDate = (k) => new Date(parseInt(k.slice(0, 4)), parseInt(k.slice(4, 6)) - 1, parseInt(k.slice(6, 8)));
+        // Longest runs of consecutive days matching a predicate.
+        const runsOf = (rows) => {
+            const keys = rows.map((r) => r.dateKey).sort();
+            if (keys.length === 0) return [];
+            const out = [];
+            let runStart = keys[0];
+            let prev = keys[0];
+            for (let i = 1; i <= keys.length; i++) {
+                const k = keys[i];
+                const contiguous = k && (toDate(k) - toDate(prev) === 86400000);
+                if (!contiguous) {
+                    out.push({
+                        len: Math.round((toDate(prev) - toDate(runStart)) / 86400000) + 1,
+                        start: runStart,
+                        end: prev,
+                    });
+                    runStart = k;
+                }
+                prev = k;
+            }
+            return out.sort((a, b) => b.len - a.len || (a.start < b.start ? -1 : 1)).slice(0, 5);
+        };
+
+        const underStreaks = runsOf(withGoal.filter((r) => r.diff <= 0));
+        const logStreaks = runsOf(inRange);
+
+        const totalKcal = inRange.reduce((a, r) => a + r.total, 0);
+        return {
+            lowest,
+            highest,
+            deficits,
+            underStreaks,
+            logStreaks,
+            daysLogged: inRange.length,
+            entries: inRange.reduce((a, r) => a + r.count, 0),
+            avg: Math.round(totalKcal / inRange.length),
+            under: withGoal.filter((r) => r.diff <= 0).length,
+            over: withGoal.filter((r) => r.diff > 0).length,
+        };
+    }, [calorieRows, startKey, endKey]);
+
     const setCardFilter = (activityId, patch) => {
         setCardioFilters((prev) => ({
             ...prev,
@@ -469,6 +584,10 @@ const Stats = ({ exercises, cardioExercises }) => {
                         className={`stats-mode-btn ${mode === 'weight' ? 'active' : ''}`}
                         onClick={() => setMode('weight')}
                     >Weight</button>
+                    <button
+                        className={`stats-mode-btn ${mode === 'calories' ? 'active' : ''}`}
+                        onClick={() => setMode('calories')}
+                    >Calories</button>
                 </div>
                 <select
                     className="stats-range-select"
@@ -809,6 +928,178 @@ const Stats = ({ exercises, cardioExercises }) => {
                         </>
                     ) : (
                         <div className="stats-empty">No weight data in this range.</div>
+                    )}
+                </div>
+            )}
+
+            {mode === 'calories' && (
+                <div className="stats-grid">
+                    {calorieStats ? (
+                        <>
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: CAL_COLOR }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: CAL_COLOR }}>Lightest Day</span>
+                                    <span className="stats-card-sets">{calorieStats.daysLogged} days</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{calorieStats.lowest[0].total}</span> kcal
+                                    {calorieStats.lowest[0].count > 1 && (
+                                        <span className="stats-tie-count" title="Same total on more than one day — earliest shown">
+                                            ({calorieStats.lowest[0].count})
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="stats-card-date">{fmtDate(calorieStats.lowest[0].dateKey)}</div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {calorieStats.lowest.map((r, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">{r.total} kcal</span>
+                                                <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: CAL_COLOR }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: CAL_COLOR }}>Heaviest Day</span>
+                                    <span className="stats-card-sets">{calorieStats.entries} entries</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{calorieStats.highest[0].total}</span> kcal
+                                    {calorieStats.highest[0].count > 1 && (
+                                        <span className="stats-tie-count">({calorieStats.highest[0].count})</span>
+                                    )}
+                                </div>
+                                <div className="stats-card-date">{fmtDate(calorieStats.highest[0].dateKey)}</div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {calorieStats.highest.map((r, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">{r.total} kcal</span>
+                                                <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: CAL_COLOR }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: CAL_COLOR }}>Daily Average</span>
+                                    <span className="stats-card-sets">
+                                        {calorieStats.under} under / {calorieStats.over} over
+                                    </span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{calorieStats.avg}</span> kcal
+                                </div>
+                                <div className="stats-card-date">across {calorieStats.daysLogged} logged days</div>
+                            </div>
+
+                            {calorieStats.deficits.length > 0 && (
+                                <div
+                                    className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                    style={{ borderLeftColor: CAL_COLOR }}
+                                    onClick={() => setExpanded((v) => !v)}
+                                >
+                                    <div className="stats-card-head">
+                                        <span className="stats-card-name" style={{ color: CAL_COLOR }}>Biggest Deficit</span>
+                                        <span className="stats-card-sets">under goal</span>
+                                    </div>
+                                    <div className="stats-card-record">
+                                        <span className="stats-big">{Math.abs(calorieStats.deficits[0].diff)}</span> kcal
+                                    </div>
+                                    <div className="stats-card-date">
+                                        {calorieStats.deficits[0].total} of {calorieStats.deficits[0].goal} · {fmtDate(calorieStats.deficits[0].dateKey)}
+                                    </div>
+                                    {expanded && (
+                                        <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                            {calorieStats.deficits.map((r, i) => (
+                                                <li key={i}>
+                                                    <span className="stats-top-value">{Math.abs(r.diff)} kcal</span>
+                                                    <span className="stats-top-date">{fmtDate(r.dateKey)}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    )}
+                                </div>
+                            )}
+
+                            {calorieStats.underStreaks.length > 0 && (
+                                <div
+                                    className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                    style={{ borderLeftColor: CAL_COLOR }}
+                                    onClick={() => setExpanded((v) => !v)}
+                                >
+                                    <div className="stats-card-head">
+                                        <span className="stats-card-name" style={{ color: CAL_COLOR }}>Longest Under Goal</span>
+                                        <span className="stats-card-sets">consecutive days</span>
+                                    </div>
+                                    <div className="stats-card-record">
+                                        <span className="stats-big">{calorieStats.underStreaks[0].len}</span>
+                                        {calorieStats.underStreaks[0].len === 1 ? ' day' : ' days'}
+                                    </div>
+                                    <div className="stats-card-date">
+                                        {fmtDate(calorieStats.underStreaks[0].start)} → {fmtDate(calorieStats.underStreaks[0].end)}
+                                    </div>
+                                    {expanded && (
+                                        <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                            {calorieStats.underStreaks.map((s, i) => (
+                                                <li key={i}>
+                                                    <span className="stats-top-value">{s.len} {s.len === 1 ? 'day' : 'days'}</span>
+                                                    <span className="stats-top-date">{fmtDate(s.start)} → {fmtDate(s.end)}</span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    )}
+                                </div>
+                            )}
+
+                            <div
+                                className={`stats-card ${expanded ? 'expanded' : ''}`}
+                                style={{ borderLeftColor: CAL_COLOR }}
+                                onClick={() => setExpanded((v) => !v)}
+                            >
+                                <div className="stats-card-head">
+                                    <span className="stats-card-name" style={{ color: CAL_COLOR }}>Longest Logging Streak</span>
+                                    <span className="stats-card-sets">consecutive days</span>
+                                </div>
+                                <div className="stats-card-record">
+                                    <span className="stats-big">{calorieStats.logStreaks[0].len}</span>
+                                    {calorieStats.logStreaks[0].len === 1 ? ' day' : ' days'}
+                                </div>
+                                <div className="stats-card-date">
+                                    {fmtDate(calorieStats.logStreaks[0].start)} → {fmtDate(calorieStats.logStreaks[0].end)}
+                                </div>
+                                {expanded && (
+                                    <ol className="stats-top-list" onClick={(e) => e.stopPropagation()}>
+                                        {calorieStats.logStreaks.map((s, i) => (
+                                            <li key={i}>
+                                                <span className="stats-top-value">{s.len} {s.len === 1 ? 'day' : 'days'}</span>
+                                                <span className="stats-top-date">{fmtDate(s.start)} → {fmtDate(s.end)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="stats-empty">No calorie data in this range.</div>
                     )}
                 </div>
             )}

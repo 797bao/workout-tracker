@@ -2045,19 +2045,21 @@ const WorkoutChart = () => {
         return keys.length ? Number(calorieGoals[keys[keys.length - 1]]) : null;
     };
 
-    /** One total per day, with the day's goal attached. */
+    /** One total per day, with the day's goal and its individual entries. */
     const calorieDays = useMemo(() => {
         return Object.keys(calorieEntries).sort().map(dateKey => {
             const entries = calorieEntries[dateKey] || {};
-            const total = Object.keys(entries).reduce((sum, k) => {
-                const v = entries[k];
-                return sum + (v && typeof v.kcal === 'number' ? v.kcal : 0);
-            }, 0);
+            // Push keys sort chronologically, so this is logging order.
+            const items = Object.keys(entries).sort()
+                .map(k => entries[k])
+                .filter(v => v && typeof v.kcal === 'number')
+                .map(v => ({ kcal: v.kcal, time: v.time || '' }));
             return {
                 dateKey,
                 day: parseInt(dateKey.slice(8), 10),
-                total,
-                count: Object.keys(entries).length,
+                total: items.reduce((sum, it) => sum + it.kcal, 0),
+                count: items.length,
+                items,
                 goal: goalForDate(dateKey)
             };
         }).filter(d => d.count > 0);
@@ -2142,10 +2144,20 @@ const WorkoutChart = () => {
                 const raw = context.raw;
                 if (!raw) return [];
                 if (context.dataset.label === 'Goal') return [`Goal: ${raw.y}`];
-                const lines = [`${raw.y} kcal in ${raw.count} ${raw.count === 1 ? 'entry' : 'entries'}`];
+                // Total first, then every entry logged that day.
+                const lines = [`${raw.y} kcal total`];
                 if (raw.goal != null) {
                     const diff = raw.y - raw.goal;
-                    lines.push(diff > 0 ? `${diff} over goal` : `${Math.abs(diff)} left of ${raw.goal}`);
+                    lines.push(diff > 0
+                        ? `${diff} over goal of ${raw.goal}`
+                        : `${Math.abs(diff)} left of ${raw.goal}`);
+                }
+                if (raw.items && raw.items.length) {
+                    lines.push(`${raw.count} ${raw.count === 1 ? 'entry' : 'entries'}:`);
+                    raw.items.forEach(it => {
+                        const when = to12Hour(it.time);
+                        lines.push(when ? `   ${it.kcal}  ·  ${when}` : `   ${it.kcal}`);
+                    });
                 }
                 return lines;
             }

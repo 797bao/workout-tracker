@@ -505,6 +505,11 @@ const WorkoutChart = () => {
         cardioExercises,
         cardioWorkouts,
         weightEntries,
+        // Without these the calorie chart paints once (empty) and never
+        // repaints when the log arrives — the summary panel still updated,
+        // which made it look like the data was there but unplotted.
+        calorieEntries,
+        calorieGoals,
         selectedActivities,
         selectedCardioActivities,
         selectedGroups,

@@ -51,7 +51,11 @@ export const selectPlugin = {
   },
 };
 
-/** Shaded value bands, labelled in the right padding. options: { bands: [{ lo, hi, label, color }], axis } */
+/**
+ * Shaded value bands. Labels sit in the right padding, or just inside the
+ * plot's right edge with `inside: true` (keeps stacked time charts aligned).
+ * options: { bands: [{ lo, hi, label, color }], axis, inside }
+ */
 export const bandsPlugin = {
   id: 'bands',
   beforeDatasetsDraw(chart, _args, opts) {
@@ -66,10 +70,11 @@ export const bandsPlugin = {
       if (bottom <= top) continue;
       ctx.fillStyle = b.color + '14';
       ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bottom - top);
+      if (bottom - top < 12) continue; // no room for a label
       ctx.fillStyle = b.color + 'cc';
       ctx.font = '600 10px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(b.label, chartArea.right + 8, (top + bottom) / 2 + 3);
+      ctx.textAlign = opts.inside ? 'right' : 'left';
+      ctx.fillText(b.label, opts.inside ? chartArea.right - 6 : chartArea.right + 8, (top + bottom) / 2 + 3);
     }
     ctx.restore();
   },

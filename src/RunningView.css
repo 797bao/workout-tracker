@@ -1,0 +1,27 @@
+/* Running - Galaxy Watch runs over time. Shared cards, toggles, KPIs and
+   tables live in HealthPages.css; only this page's own layout lives here. */
+
+.bs-kpis.rv-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.rv-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--hp-soft);
+  background: rgba(252, 173, 112, 0.08);
+  border: 1px solid rgba(252, 173, 112, 0.35);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.rv-title-note { font-size: 11px; font-weight: 500; color: var(--hp-faint); text-transform: none; letter-spacing: 0; }
+.rv-chart { position: relative; height: 230px; }
+.rv-chart-short { height: 190px; }
+
+.rv-clock { color: var(--hp-faint); margin-left: 8px; }
+.rv-more { margin-top: 10px; }
+
+@media (max-width: 820px) {
+  .bs-kpis.rv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rv-chart { height: 200px; }
+  .rv-chart-short { height: 170px; }
+}

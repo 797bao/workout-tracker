@@ -10,6 +10,8 @@ import { getAuth, signInWithCustomToken, onAuthStateChanged } from 'firebase/aut
 import './WorkoutChart.css';
 import { set } from 'date-fns';
 import Stats from './Stats';
+import BodyStatsView from './BodyStatsView';
+import WatchView from './WatchView';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -33,6 +35,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
+// Pages listed above the year list in the sidebar; 'chart' is the month view.
+const SIDE_PAGES = [
+    { id: 'stats', icon: '★', label: 'Stats' },
+    { id: 'body', icon: '◐', label: 'Body Stats' },
+    { id: 'watch', icon: '♥', label: 'Watch' },
+];
+
 let today = new Date();
 let currentDay = today.getDate().toString();
 let isCurrentMonth;
@@ -90,13 +99,18 @@ const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose, page, setPage }
 
     return (
         <div className={`date-sidebar ${isOpen ? 'drawer-open' : ''}`}>
-            {/* Stats page — sits above the year list */}
-            <div
-                className={`stats-nav-item ${page === 'stats' ? 'active' : ''}`}
-                onClick={() => { setPage('stats'); if (onClose) onClose(); }}
-            >
-                <span className="stats-nav-icon">&#9733;</span>
-                <span>Stats</span>
+            {/* Stats, Body Stats and Watch pages — sit above the year list */}
+            <div className="stats-nav-group">
+                {SIDE_PAGES.map(p => (
+                    <div
+                        key={p.id}
+                        className={`stats-nav-item ${page === p.id ? 'active' : ''}`}
+                        onClick={() => { setPage(p.id); if (onClose) onClose(); }}
+                    >
+                        <span className="stats-nav-icon">{p.icon}</span>
+                        <span>{p.label}</span>
+                    </div>
+                ))}
             </div>
             {years.map(year => (
                 <div key={year} className="year-section">
@@ -148,7 +162,7 @@ const WorkoutChart = () => {
     const [yAxisLabels, setYAxisLabels] = useState([]);
 
     // State variables
-    const [page, setPage] = useState('chart'); // 'chart' or 'stats'
+    const [page, setPage] = useState('chart'); // 'chart' | 'stats' | 'body' | 'watch'
     const [mode, setMode] = useState('strength'); // 'strength' | 'cardio' | 'weight' | 'calories'
 
     // Strength <-> cardio share the left toggle (and Tab). Weight and Calories
@@ -2601,6 +2615,10 @@ const WorkoutChart = () => {
 
             {page === 'stats' ? (
                 <Stats exercises={exercises} cardioExercises={cardioExercises} />
+            ) : page === 'body' ? (
+                <BodyStatsView database={database} canWrite={canWriteGoal} />
+            ) : page === 'watch' ? (
+                <WatchView database={database} />
             ) : (
             <>
             <div className="mobile-controls-row">

@@ -1,0 +1,219 @@
+/* Body Stats + Watch pages. The frame (.stats-page, .stats-header,
+   .stats-title, .stats-subtitle) comes from Stats.css so all three sidebar
+   pages read as one family; everything else is scoped to .health-page. */
+
+.health-page {
+  --hp-card: #2a2c33;
+  --hp-inset: #202124;
+  --hp-line: #3c3f47;
+  --hp-rule: #34373f;
+  --hp-text: #e8eaed;
+  --hp-soft: #bdc1c6;
+  --hp-muted: #9aa0a6;
+  --hp-faint: #80868b;
+  --hp-accent: #C58AF9;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  color: var(--hp-text);
+}
+.health-page *, .health-page *::before, .health-page *::after { box-sizing: border-box; }
+.health-page .stats-header { margin-bottom: 2px; flex-wrap: wrap; }
+
+.health-page .hp-empty { padding: 40px 16px; text-align: center; color: var(--hp-muted); font-size: 14px; }
+
+/* ── Filter bar ── */
+.health-page .range-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--hp-card);
+  border: 1px solid var(--hp-line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--hp-muted);
+  flex-wrap: wrap;
+}
+.health-page .range-bar label { color: var(--hp-muted); font-weight: 500; }
+.health-page .range-clear {
+  background: transparent;
+  border: 1px solid #5a5f6b;
+  color: var(--hp-text);
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.health-page .range-clear:hover { background: var(--hp-accent); border-color: var(--hp-accent); color: #202124; }
+.health-page .range-info { margin-left: auto; font-size: 11px; color: var(--hp-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Segmented toggle ── */
+.health-page .view-toggle {
+  display: inline-flex;
+  background: var(--hp-inset);
+  border: 1px solid var(--hp-line);
+  border-radius: 6px;
+  padding: 2px;
+}
+.health-page .view-toggle button {
+  background: transparent;
+  border: none;
+  color: var(--hp-muted);
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-weight: 500;
+  font-family: inherit;
+}
+.health-page .view-toggle button:hover { color: var(--hp-text); }
+.health-page .view-toggle button.active { background: var(--hp-accent); color: #202124; font-weight: 600; }
+
+/* ── Cards ── */
+.bs-card {
+  background: var(--hp-card);
+  border: 1px solid var(--hp-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.bs-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hp-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bs-footnote { font-size: 11px; color: var(--hp-faint); margin-top: 8px; line-height: 1.4; }
+
+/* ── KPI cards with sparklines ── */
+.bs-kpis { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
+.bs-kpi {
+  background: var(--hp-card);
+  border: 1px solid var(--hp-line);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.bs-kpi-label { font-size: 11px; color: var(--hp-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-kpi-value { font-size: 22px; font-weight: 700; color: var(--hp-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bs-kpi-unit { font-size: 12px; font-weight: 500; color: var(--hp-muted); }
+.bs-kpi-delta { font-size: 12px; font-weight: 600; color: var(--hp-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-kpi-delta.good { color: #81c995; }
+.bs-kpi-delta.bad { color: #f28b82; }
+.bs-spark { display: block; width: 100%; height: 26px; margin-top: 6px; }
+
+/* ── Rating gauge (body fat %, VO2 max) ── */
+.bs-gauge { position: relative; margin: 34px 4px 4px; }
+.bs-gauge-track { position: relative; height: 28px; border-radius: 6px; background: var(--hp-inset); }
+.bs-gauge-band {
+  position: absolute; top: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: var(--hp-text);
+  border-right: 1px solid var(--hp-card); overflow: hidden;
+}
+.bs-gauge-band:first-child { border-radius: 6px 0 0 6px; }
+.bs-gauge-band:last-of-type { border-right: none; border-radius: 0 6px 6px 0; }
+.bs-gauge-band span { white-space: nowrap; opacity: 0.85; }
+.bs-gauge-now {
+  position: absolute; top: -8px; bottom: -8px; width: 4px; margin-left: -2px;
+  background: #fff; border-radius: 2px; box-shadow: 0 0 0 2px var(--hp-card); z-index: 2;
+}
+.bs-gauge-now span {
+  position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+  font-size: 13px; font-weight: 800; color: #fff; white-space: nowrap;
+}
+.bs-gauge-goal { position: absolute; top: -8px; bottom: -8px; border-left: 2px dashed var(--hp-accent); z-index: 1; }
+.bs-gauge-goal span {
+  position: absolute; bottom: calc(100% + 3px); right: 4px;
+  font-size: 11px; font-weight: 700; color: var(--hp-accent); white-space: nowrap;
+}
+.bs-gauge-mark {
+  position: absolute; top: calc(100% + 18px); width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
+}
+.bs-gauge-mark.first { background: #8ab4f8; }
+.bs-gauge-mark.best { background: #81c995; }
+.bs-gauge-mark span {
+  position: absolute; top: -1px; left: 13px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--hp-soft);
+}
+.bs-gauge-scale { position: relative; height: 14px; margin-top: 3px; }
+.bs-gauge-scale span {
+  position: absolute; transform: translateX(-50%); font-size: 10px; color: var(--hp-faint); font-variant-numeric: tabular-nums;
+}
+.bs-gauge-caption { margin-top: 22px; font-size: 11px; color: var(--hp-faint); }
+
+.bs-since { margin-top: 10px; font-size: 13px; color: var(--hp-soft); line-height: 1.5; }
+.bs-since b { font-weight: 700; color: var(--hp-text); }
+.bs-since b.good { color: #81c995; }
+.bs-since b.bad { color: #f28b82; }
+
+/* ── Chart legends ── */
+.bs-legend { display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--hp-soft); flex-wrap: wrap; }
+.bs-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-left: 10px; }
+.bs-legend i.line { height: 3px; width: 16px; border-radius: 2px; }
+.bs-legend i.line.dashed { height: 0; background: none; border-top: 2px dashed; }
+
+/* ── Tables ── */
+.bs-table-wrap { overflow-x: auto; }
+.bs-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bs-table th {
+  text-align: right; color: var(--hp-muted); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 8px; border-bottom: 1px solid var(--hp-line); white-space: nowrap;
+}
+.bs-table td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--hp-rule); color: var(--hp-text); white-space: nowrap; }
+.bs-table th:first-child, .bs-table td:first-child { text-align: left; }
+.bs-table tbody tr { cursor: pointer; }
+.bs-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+.bs-table tbody tr.sel { background: rgba(197, 138, 249, 0.16); }
+.bs-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+/* ── Series list (which lines are on a chart) ── */
+.health-page .activity-list { list-style: none; margin: 0; padding: 0; }
+.health-page .activity-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 4px;
+  cursor: pointer; border-radius: 4px; user-select: none;
+}
+.health-page .activity-row:hover { background: rgba(255, 255, 255, 0.03); }
+.health-page .activity-row.off .activity-name { color: #666 !important; }
+.health-page .activity-row.off .activity-hours { color: #555; }
+.health-page .activity-checkbox { width: 16px; height: 16px; border-radius: 3px; border: 2px solid; flex-shrink: 0; }
+.health-page .activity-name { flex: 1; font-size: 14px; font-weight: 500; }
+.health-page .activity-hours { font-size: 14px; color: var(--hp-text); font-variant-numeric: tabular-nums; }
+.health-page .only-btn {
+  display: inline-flex; align-items: center; background: transparent;
+  border: 1px solid #5a5f6b; color: var(--hp-muted);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 7px;
+  border-radius: 4px; cursor: pointer; text-transform: uppercase; margin-left: 6px; flex-shrink: 0;
+}
+.health-page .only-btn:hover { background: var(--hp-accent); border-color: var(--hp-accent); color: #202124; }
+
+@media (max-width: 1400px) {
+  .bs-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Mobile: same breakpoint as WorkoutChart.css, where .workout-root turns into
+   a column that already clears the fixed top bar and centres nothing - so the
+   page stretches to the screen width and scrolls inside the remaining height. */
+@media (max-width: 820px), (orientation: portrait) and (max-width: 1100px) {
+  .health-page.stats-page { align-self: stretch; width: 100%; min-height: 0; padding: 12px 12px 40px; }
+}
+@media (max-width: 820px) {
+  .bs-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .health-page .range-info { margin-left: 0; width: 100%; }
+  .bs-gauge-band span { display: none; }
+  .bs-card { padding: 10px 11px; }
+}

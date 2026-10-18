@@ -1,0 +1,112 @@
+/* Body Stats - DEXA scan history. Shared cards, toggles, KPIs and tables
+   live in HealthPages.css; only this page's own layout lives here. */
+
+.bs-compare-label { margin-left: 8px; }
+.bs-map-table td.good { color: #81c995; }
+.bs-map-table td.bad { color: #f28b82; }
+
+/* ── Selected scan heading ── */
+.bs-scan-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 2px 2px 0; }
+.bs-scan-date { font-size: 18px; font-weight: 700; color: var(--hp-text); font-variant-numeric: tabular-nums; }
+.bs-scan-sub { font-size: 12px; color: var(--hp-muted); }
+
+/* ── Hero: body fat gauge + goal ── */
+.bs-hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 8px; }
+.bs-fat-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.bs-fat-big { font-size: 40px; font-weight: 800; color: #fdd663; line-height: 1; font-variant-numeric: tabular-nums; }
+.bs-fat-band { font-size: 14px; font-weight: 700; }
+
+.bs-goal-opts { flex-wrap: wrap; margin-bottom: 12px; }
+.bs-goal-opts button { display: inline-flex; align-items: baseline; gap: 5px; }
+.bs-goal-opts small { font-size: 10px; opacity: 0.75; }
+.bs-goal-note { font-size: 11px; color: var(--hp-faint); margin: -6px 0 10px; }
+.bs-goal-big { font-size: 24px; font-weight: 800; color: var(--hp-text); }
+.bs-goal-big.good { color: #81c995; }
+.bs-goal-sub { font-size: 12px; color: var(--hp-muted); margin-top: 2px; }
+.bs-progress { margin-top: 14px; }
+.bs-progress-bar { height: 10px; border-radius: 5px; background: var(--hp-inset); overflow: hidden; }
+.bs-progress-bar div { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #f28b82, #fdd663 60%, #81c995); }
+.bs-progress-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--hp-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.bs-progress-label span:nth-child(2) { color: var(--hp-text); font-weight: 700; }
+.bs-goal-pace { margin-top: 12px; font-size: 13px; color: var(--hp-soft); line-height: 1.5; }
+.bs-goal-pace b { color: var(--hp-accent); }
+
+/* ── Body fat % (top) + composition bars (bottom), plot areas aligned ── */
+.bs-bf-chart { position: relative; height: 190px; }
+.bs-comp-chart { position: relative; height: 250px; margin-top: 2px; }
+
+/* ── What to work on + body map ── */
+.bs-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 8px; }
+
+.bs-focus { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bs-focus-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  column-gap: 8px;
+  border: 1px solid var(--hp-line);
+  border-left: 3px solid #5f6368;
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: var(--hp-inset);
+}
+.bs-focus-item.work { border-left-color: #f28b82; }
+.bs-focus-item.watch { border-left-color: #fdd663; }
+.bs-focus-item.good { border-left-color: #81c995; }
+.bs-status {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 4px; color: #202124; align-self: center;
+}
+.bs-status.work { background: #f28b82; }
+.bs-status.watch { background: #fdd663; }
+.bs-status.good { background: #81c995; }
+.bs-focus-title { font-size: 14px; font-weight: 600; color: var(--hp-text); }
+.bs-focus-value { font-size: 14px; font-weight: 700; color: var(--hp-accent); font-variant-numeric: tabular-nums; }
+.bs-focus-trend { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bs-focus-trend.good { color: #81c995; }
+.bs-focus-trend.bad { color: #f28b82; }
+.bs-focus-line { grid-column: 1 / -1; font-size: 12px; color: var(--hp-soft); line-height: 1.4; margin-top: 3px; }
+
+.bs-map { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 14px; align-items: start; }
+.bs-map-svg { width: 100%; height: auto; }
+.bs-map-svg rect, .bs-map-svg circle { transition: stroke 0.1s; cursor: default; }
+.bs-map-pct { font-size: 11px; font-weight: 800; fill: #202124; pointer-events: none; }
+.bs-map-side { font-size: 11px; font-weight: 700; fill: var(--hp-muted); }
+.bs-map-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bs-map-table th { text-align: right; font-size: 10px; color: var(--hp-muted); font-weight: 600; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--hp-line); white-space: nowrap; }
+.bs-map-table td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--hp-rule); color: var(--hp-text); white-space: nowrap; }
+.bs-map-table th:first-child, .bs-map-table td:first-child { text-align: left; }
+.bs-map-table td i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; }
+.bs-map-table tr.hot td { background: rgba(255, 255, 255, 0.05); }
+.bs-map-table tr:last-child td { font-weight: 700; border-bottom: none; }
+.bs-map-scale { grid-column: 1; display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--hp-faint); }
+.bs-map-gradient {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, rgb(129,201,149) 0%, rgb(253,214,99) 30.8%, rgb(242,139,130) 61.5%, rgb(217,48,37) 100%);
+}
+
+/* ── Detail charts + series list ── */
+.bs-main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 8px; }
+.bs-chart-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.bs-tabs { flex-wrap: wrap; }
+.bs-chart { position: relative; height: 320px; }
+.bs-series { max-height: 420px; overflow-y: auto; }
+
+/* ── Narrower desktops ── */
+@media (max-width: 1100px) {
+  .bs-hero, .bs-lower { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Phones ── */
+@media (max-width: 820px) {
+  .bs-main { grid-template-columns: minmax(0, 1fr); }
+  .bs-bf-chart { height: 170px; }
+  .bs-comp-chart { height: 220px; }
+  .bs-chart { height: 280px; }
+  .bs-compare-label { margin-left: 0; }
+  .bs-map { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .bs-map-svg { max-width: 170px; justify-self: center; }
+  .bs-map-table th, .bs-map-table td { padding: 4px 4px; }
+  .bs-fat-big { font-size: 34px; }
+  .bs-series { max-height: none; }
+}

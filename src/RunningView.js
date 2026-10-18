@@ -205,7 +205,9 @@ function RunningView({ database }) {
   const longest = runs.filter((w) => w.distanceMi).reduce((b, w) => (!b || w.distanceMi > b.distanceMi ? w : b), null);
   // #endregion
 
-  // #region Charts: three stacked time charts with matching axes, so a date lines up down the page
+  // #region Charts: stacked time charts on matching axes, so a date lines up down the page.
+  // VO2 max is the exception: it starts at its first reading (the watch only
+  // measures it from 2022), so it never shows years of empty axis.
   const AXIS_W = isMobile ? 40 : 48;
   const fixAxis = (scale) => { scale.width = AXIS_W; };
   const base = {
@@ -249,7 +251,7 @@ function RunningView({ database }) {
           },
         },
         scales: {
-          x: xAxis,
+          x: { ...xAxis, min: Math.max(xMin, period(vo2[0].date, unit).start) },
           y: {
             min: Math.floor((Math.min(...vals) - 3) / 2) * 2, max: Math.ceil((Math.max(...vals) + 3) / 2) * 2,
             afterFit: fixAxis, ticks: yTicks, grid: { color: 'rgba(255,255,255,0.05)' },
@@ -257,7 +259,7 @@ function RunningView({ database }) {
         },
       },
     };
-  }, [vo2, age, xMin, xMax, isMobile]);
+  }, [vo2, age, xMin, xMax, unit, isMobile]);
 
   const distCanvas = useRef(null);
   useChart(distCanvas, () => {

@@ -21,6 +21,9 @@ const RANGES = [
   { id: 'all', label: 'All', months: null },
 ];
 const RUN_TYPES = new Set(['running', 'treadmill run']);
+// Paces outside this band are a treadmill run without distance, walk breaks or a
+// GPS dropout (one 0.6 mi "run" took 72 min); they stay in the table but not in pace stats.
+const PACE_OK = (w) => w.paceMinPerMi >= 4.5 && w.paceMinPerMi <= 20;
 const C = { vo2: '#e8eaed', miles: '#8ab4f8', pace: '#fdd663', trend: '#C58AF9' };
 const DAY = 86400000;
 const TABLE_ROWS = 10;
@@ -157,7 +160,7 @@ function RunningView({ database }) {
       const b = map.get(p.start) || { ...p, miles: 0, runs: 0, timedMiles: 0, minutes: 0 };
       b.miles += w.distanceMi || 0;
       b.runs += 1;
-      if (w.distanceMi && w.durationMin) { b.timedMiles += w.distanceMi; b.minutes += w.durationMin; }
+      if (PACE_OK(w)) { b.timedMiles += w.distanceMi; b.minutes += w.durationMin; }
       map.set(p.start, b);
     }
     return [...map.values()].sort((a, b) => a.start - b.start).map((b) => ({ ...b, mid: (b.start + b.end) / 2 }));
@@ -169,10 +172,11 @@ function RunningView({ database }) {
   const rating = latestVo2 ? vo2Rating(age, latestVo2.value) : null;
   const vo2Change = vo2.length > 1 ? vo2[vo2.length - 1].value - vo2[0].value : null;
   const miles = runs.reduce((s, w) => s + (w.distanceMi || 0), 0);
-  const timedMiles = runs.reduce((s, w) => s + (w.distanceMi && w.durationMin ? w.distanceMi : 0), 0);
-  const timedMinutes = runs.reduce((s, w) => s + (w.distanceMi && w.durationMin ? w.durationMin : 0), 0);
-  const avgPace = timedMiles > 0 ? timedMinutes / timedMiles : null;
-  const best = runs.filter((w) => w.paceMinPerMi).reduce((b, w) => (!b || w.paceMinPerMi < b.paceMinPerMi ? w : b), null);
+  const paced = runs.filter(PACE_OK);
+  const offPace = runs.filter((w) => w.paceMinPerMi && !PACE_OK(w)).length;
+  const timedMiles = paced.reduce((s, w) => s + w.distanceMi, 0);
+  const avgPace = timedMiles > 0 ? paced.reduce((s, w) => s + w.durationMin, 0) / timedMiles : null;
+  const best = paced.reduce((b, w) => (!b || w.paceMinPerMi < b.paceMinPerMi ? w : b), null);
   const longest = runs.filter((w) => w.distanceMi).reduce((b, w) => (!b || w.distanceMi > b.distanceMi ? w : b), null);
   // #endregion
 
@@ -273,7 +277,7 @@ function RunningView({ database }) {
 
   const paceCanvas = useRef(null);
   useChart(paceCanvas, () => {
-    const timed = runs.filter((w) => w.paceMinPerMi);
+    const timed = runs.filter(PACE_OK);
     if (!timed.length) return null;
     const trend = buckets.filter((b) => b.timedMiles).map((b) => ({ x: b.mid, y: b.minutes / b.timedMiles }));
     const paces = [...timed.map((w) => w.paceMinPerMi), ...trend.map((t) => t.y)];
@@ -430,9 +434,14 @@ function RunningView({ database }) {
           </span>
           <span className="rv-title-note">minutes per mile · faster is higher</span>
         </div>
-        {runs.some((w) => w.paceMinPerMi)
+        {runs.some(PACE_OK)
           ? <div className="rv-chart"><canvas ref={paceCanvas} /></div>
           : <div className="hp-empty">No runs with distance in this range.</div>}
+        {offPace > 0 && (
+          <div className="bs-footnote">
+            {plural(offPace, 'run')} slower than 20:00 /mi left out of pace (treadmill, walk breaks or GPS dropouts); they're still in the list below.
+          </div>
+        )}
       </div>
 
       <div className="bs-card">

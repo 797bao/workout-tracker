@@ -62,6 +62,27 @@ function ago(ms) {
 }
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+// Runs table: click a header to sort by it, click again to flip. `first` is the
+// direction a fresh click starts in; `words` say it in the title (desc, asc).
+const COLUMNS = [
+  { id: 'date', label: 'Date', get: (w) => w.startMs, first: 'desc', words: ['newest', 'oldest'],
+    cell: (w) => <>{longDay(w.date)}<span className="rv-clock">{clock(w.start)}</span></> },
+  { id: 'miles', label: 'Miles', get: (w) => w.distanceMi, first: 'desc', words: ['longest', 'shortest'],
+    cell: (w) => (w.distanceMi ? fmt(w.distanceMi, 2) : '—') },
+  { id: 'time', label: 'Time', get: (w) => w.durationMin, first: 'desc', words: ['longest time', 'shortest time'],
+    cell: (w) => durText(w.durationMin) },
+  { id: 'pace', label: 'Pace /mi', get: (w) => w.paceMinPerMi, first: 'asc', words: ['slowest', 'fastest'],
+    cell: (w) => (!w.paceMinPerMi ? '—' : PACE_OK(w)
+      ? (w.pacePerMi || paceText(w.paceMinPerMi))
+      : <span className="rv-off" title="Left out of pace stats: distance or time looks wrong">{w.pacePerMi || paceText(w.paceMinPerMi)}</span>) },
+  { id: 'avgHr', label: 'Avg HR', get: (w) => w.avgHr, first: 'desc', words: ['highest avg HR', 'lowest avg HR'],
+    cell: (w) => (w.avgHr ? Math.round(w.avgHr) : '—') },
+  { id: 'maxHr', label: 'Max HR', get: (w) => w.maxHr, first: 'desc', words: ['highest max HR', 'lowest max HR'],
+    cell: (w) => (w.maxHr ? Math.round(w.maxHr) : '—') },
+  { id: 'vo2', label: 'VO2 max', get: (w) => w.vo2max, first: 'desc', words: ['highest VO2 max', 'lowest VO2 max'],
+    cell: (w) => (w.vo2max ? fmt(w.vo2max) : '—') },
+];
+
 /** Start of the day, week (Monday) or month holding `day`, and the start of the next one. */
 function period(day, unit) {
   const d = new Date(day + 'T00:00:00');
@@ -118,6 +139,7 @@ function RunningView({ database }) {
   const { profile } = useBodyStats(database);
   const [range, setRange] = useState('all');
   const [showAllRuns, setShowAllRuns] = useState(false);
+  const [sort, setSort] = useState({ col: 'date', dir: 'desc' });
 
   const today = dayKey(new Date());
   const age = ageAt(profile?.dob, today) ?? 25;
@@ -334,6 +356,20 @@ function RunningView({ database }) {
   }, [runs, buckets, unit, xMin, xMax, isMobile]);
   // #endregion
 
+  // #region Runs table order
+  const sortCol = COLUMNS.find((c) => c.id === sort.col);
+  const sortedRuns = useMemo(() => {
+    const has = (w) => Number.isFinite(sortCol.get(w)) && sortCol.get(w) > 0;
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    // Runs without the value sink to the bottom, newest first
+    return [
+      ...runs.filter(has).sort((a, b) => sign * (sortCol.get(a) - sortCol.get(b)) || b.startMs - a.startMs),
+      ...runs.filter((w) => !has(w)).sort((a, b) => b.startMs - a.startMs),
+    ];
+  }, [runs, sortCol, sort.dir]);
+  const onSort = (c) => setSort((s) => (s.col === c.id ? { col: c.id, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col: c.id, dir: c.first }));
+  // #endregion
+
   const header = (
     <div className="stats-header">
       <h2 className="stats-title">Running</h2>
@@ -355,8 +391,7 @@ function RunningView({ database }) {
   }
 
   const shortHistory = Date.parse(today) - Date.parse(firstDay) < 45 * DAY;
-  const newestFirst = [...runs].reverse();
-  const tableRuns = showAllRuns ? newestFirst : newestFirst.slice(0, TABLE_ROWS);
+  const tableRuns = showAllRuns ? sortedRuns : sortedRuns.slice(0, TABLE_ROWS);
   return (
     <div className="stats-page health-page running-page">
       {header}
@@ -445,32 +480,40 @@ function RunningView({ database }) {
       </div>
 
       <div className="bs-card">
-        <div className="bs-panel-title">Runs</div>
+        <div className="bs-panel-title">
+          Runs
+          <span className="rv-title-note">{sortCol.words[sort.dir === 'desc' ? 0 : 1]} first · tap a column to sort</span>
+        </div>
         {runs.length ? (
           <>
             <div className="bs-table-wrap">
               <table className="bs-table rv-table">
                 <thead>
-                  <tr><th>Date</th><th>Miles</th><th>Time</th><th>Pace /mi</th><th>Avg HR</th><th>Max HR</th><th>VO2 max</th></tr>
+                  <tr>
+                    {COLUMNS.map((c) => (
+                      <th
+                        key={c.id}
+                        className={`rv-sort ${sort.col === c.id ? 'on' : ''}`}
+                        aria-sort={sort.col === c.id ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                        onClick={() => onSort(c)}
+                      >
+                        {c.label}<span className="rv-arrow">{sort.col === c.id ? (sort.dir === 'desc' ? '▼' : '▲') : ''}</span>
+                      </th>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {tableRuns.map((w) => (
                     <tr key={w.id}>
-                      <td>{longDay(w.date)}<span className="rv-clock">{clock(w.start)}</span></td>
-                      <td>{w.distanceMi ? fmt(w.distanceMi, 2) : '—'}</td>
-                      <td>{durText(w.durationMin)}</td>
-                      <td>{w.paceMinPerMi ? (w.pacePerMi || paceText(w.paceMinPerMi)) : '—'}</td>
-                      <td>{w.avgHr ? Math.round(w.avgHr) : '—'}</td>
-                      <td>{w.maxHr ? Math.round(w.maxHr) : '—'}</td>
-                      <td>{w.vo2max ? fmt(w.vo2max) : '—'}</td>
+                      {COLUMNS.map((c) => <td key={c.id} className={sort.col === c.id ? 'on' : ''}>{c.cell(w)}</td>)}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {newestFirst.length > TABLE_ROWS && (
+            {runs.length > TABLE_ROWS && (
               <button className="range-clear rv-more" onClick={() => setShowAllRuns((v) => !v)}>
-                {showAllRuns ? 'Show fewer' : `Show all ${newestFirst.length} runs`}
+                {showAllRuns ? 'Show fewer' : `Show all ${runs.length} runs`}
               </button>
             )}
           </>

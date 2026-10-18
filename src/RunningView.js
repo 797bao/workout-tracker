@@ -15,6 +15,8 @@ Chart.register(...registerables);
 
 // #region Constants + formatting
 const RANGES = [
+  { id: '1w', label: '1W', days: 7 },
+  { id: '1m', label: '1M', months: 1 },
   { id: '3m', label: '3M', months: 3 },
   { id: '6m', label: '6M', months: 6 },
   { id: '1y', label: '1Y', months: 12 },
@@ -158,11 +160,12 @@ function RunningView({ database }) {
   }, [data]);
 
   const firstDay = [all.runs[0]?.date, all.vo2[0]?.date].filter(Boolean).sort()[0] || today;
-  const months = RANGES.find((r) => r.id === range).months;
+  const { months, days } = RANGES.find((r) => r.id === range);
   let from = firstDay;
-  if (months) {
+  if (months || days) {
     const d = new Date(today + 'T00:00:00');
-    d.setMonth(d.getMonth() - months);
+    if (months) d.setMonth(d.getMonth() - months);
+    else d.setDate(d.getDate() - (days - 1));
     from = dayKey(d);
   }
   // Days, weeks or months depending on the span. The axis runs from the start

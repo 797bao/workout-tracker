@@ -35,6 +35,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 const auth = getAuth(app);
+// Cardio activities whose tooltip shows the watch's VO2 max (samsungHealth/vo2max).
+// The watch only measures it on outdoor runs, so a day without a reading shows
+// the latest one before it, if it is at most VO2_MAX_AGE_DAYS old.
+const VO2_ACTIVITIES = new Set(['jogging', 'missionpeak']);
+const VO2_MAX_AGE_DAYS = 60;
+
 // Pages listed above the year list in the sidebar; 'chart' is the month view.
 const SIDE_PAGES = [
     { id: 'stats', icon: '★', label: 'Stats' },
@@ -388,6 +394,26 @@ const WorkoutChart = () => {
         }
         return onAuthStateChanged(auth, user => setCanWriteGoal(!!user));
     }, []);
+
+    // Watch VO2 max readings for the cardio tooltips. Kept in a ref so a chart
+    // built before they load still finds them on hover.
+    const vo2Readings = useRef([]);
+    useEffect(() => onValue(ref(database, 'samsungHealth/vo2max'), (snapshot) => {
+        vo2Readings.current = Object.values(snapshot.val() || {})
+            .filter(v => v.value && v.date)
+            .sort((a, b) => a.date.localeCompare(b.date) || (a.timeMs || 0) - (b.timeMs || 0));
+    }, () => {}), []);
+
+    // 'YYYYMMDD' -> { value, date, sameDay } from the watch, or null
+    const vo2ForDay = (dateKey) => {
+        const day = `${dateKey.slice(0, 4)}-${dateKey.slice(4, 6)}-${dateKey.slice(6, 8)}`;
+        const upTo = vo2Readings.current.filter(v => v.date <= day);
+        const last = upTo[upTo.length - 1];
+        if (!last) return null;
+        if (last.date === day) return { value: last.value, date: last.date, sameDay: true };
+        const ageDays = (Date.parse(day) - Date.parse(last.date)) / 86400000;
+        return ageDays <= VO2_MAX_AGE_DAYS ? { value: last.value, date: last.date, sameDay: false } : null;
+    };
 
     // calorieGoals is a tiny date->kcal map; keep it live regardless of mode so
     // the editor and the chart's goal line always agree.
@@ -2450,6 +2476,16 @@ const WorkoutChart = () => {
                 // Only add resistance line if it exists
                 if (raw.resistance) {
                     tooltipLines.push(`Resistance: ${raw.resistance}`);
+                }
+
+                if (VO2_ACTIVITIES.has(raw.exerciseId)) {
+                    const vo2 = vo2ForDay(raw.dateKey);
+                    if (vo2) {
+                        const when = new Date(vo2.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        tooltipLines.push(vo2.sameDay
+                            ? `VO2 max: ${vo2.value.toFixed(1)} (watch, this day)`
+                            : `VO2 max: ~${vo2.value.toFixed(1)} (watch, ${when})`);
+                    }
                 }
 
                 return tooltipLines;

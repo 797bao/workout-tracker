@@ -2483,8 +2483,8 @@ const WorkoutChart = () => {
                     if (vo2) {
                         const when = new Date(vo2.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                         tooltipLines.push(vo2.sameDay
-                            ? `VO2 max: ${vo2.value.toFixed(1)} (watch, this day)`
-                            : `VO2 max: ~${vo2.value.toFixed(1)} (watch, ${when})`);
+                            ? `VO2 max: ${vo2.value.toFixed(2)} (watch, this day)`
+                            : `VO2 max: ~${vo2.value.toFixed(2)} (watch, ${when})`);
                     }
                 }
 

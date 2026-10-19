@@ -82,7 +82,7 @@ const COLUMNS = [
   { id: 'maxHr', label: 'Max HR', get: (w) => w.maxHr, first: 'desc', words: ['highest max HR', 'lowest max HR'],
     cell: (w) => (w.maxHr ? Math.round(w.maxHr) : '—') },
   { id: 'vo2', label: 'VO2 max', get: (w) => w.vo2max, first: 'desc', words: ['highest VO2 max', 'lowest VO2 max'],
-    cell: (w) => (w.vo2max ? fmt(w.vo2max) : '—') },
+    cell: (w) => (w.vo2max ? fmt(w.vo2max, 2) : '—') },
 ];
 
 /** Start of the day, week (Monday) or month holding `day`, and the start of the next one. */
@@ -246,7 +246,7 @@ function RunningView({ database }) {
             ...tooltipBase,
             callbacks: {
               title: (items) => longDay(vo2[items[0].dataIndex].date),
-              label: (ctx) => ` VO2 max ${fmt(ctx.parsed.y)} · ${vo2Rating(age, ctx.parsed.y).level}`,
+              label: (ctx) => ` VO2 max ${fmt(ctx.parsed.y, 2)} · ${vo2Rating(age, ctx.parsed.y).level}`,
             },
           },
         },
@@ -422,11 +422,11 @@ function RunningView({ database }) {
       <div className="bs-kpis rv-kpis">
         <div className="bs-kpi">
           <div className="bs-kpi-label">VO2 max</div>
-          <div className="bs-kpi-value" style={rating ? { color: rating.color } : undefined}>{latestVo2 ? fmt(latestVo2.value) : '—'}</div>
+          <div className="bs-kpi-value" style={rating ? { color: rating.color } : undefined}>{latestVo2 ? fmt(latestVo2.value, 2) : '—'}</div>
           <div className="bs-kpi-delta">
             {rating ? `${rating.level}${rating.next ? ` · ${rating.next.level} at ${fmt(rating.next.at)}` : ''}` : 'no reading yet'}
           </div>
-          {vo2Change !== null && <div className={`bs-kpi-delta ${vo2Change >= 0 ? 'good' : 'bad'}`}>{signed(vo2Change)} in this range</div>}
+          {vo2Change !== null && <div className={`bs-kpi-delta ${vo2Change >= 0 ? 'good' : 'bad'}`}>{signed(vo2Change, 2)} in this range</div>}
         </div>
         <div className="bs-kpi">
           <div className="bs-kpi-label">Distance</div>

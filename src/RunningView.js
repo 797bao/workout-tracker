@@ -8,6 +8,7 @@ import { useBodyStats } from './useBodyStats';
 import { useIsMobile } from './useIsMobile';
 import { ageAt, fmt, signed } from './bodyStatsMetrics';
 import { useChart, bandsPlugin, tooltipBase } from './healthCharts';
+import DateInput from './DateInput';
 import './HealthPages.css';
 import './RunningView.css';
 
@@ -140,6 +141,7 @@ function RunningView({ database }) {
   const { data, loaded } = useSamsungHealth(database);
   const { profile } = useBodyStats(database);
   const [range, setRange] = useState('all');
+  const [custom, setCustom] = useState({ from: '', to: '' }); // a picked From / To overrides the buttons
   const [showAllRuns, setShowAllRuns] = useState(false);
   const [sort, setSort] = useState({ col: 'date', dir: 'desc' });
 
@@ -160,9 +162,14 @@ function RunningView({ database }) {
   }, [data]);
 
   const firstDay = [all.runs[0]?.date, all.vo2[0]?.date].filter(Boolean).sort()[0] || today;
+  const isCustom = !!(custom.from || custom.to);
   const { months, days } = RANGES.find((r) => r.id === range);
   let from = firstDay;
-  if (months || days) {
+  let end = today;
+  if (isCustom) {
+    from = custom.from || firstDay;
+    end = custom.to || today;
+  } else if (months || days) {
     const d = new Date(today + 'T00:00:00');
     if (months) d.setMonth(d.getMonth() - months);
     else d.setDate(d.getDate() - (days - 1));
@@ -170,13 +177,15 @@ function RunningView({ database }) {
   }
   // Days, weeks or months depending on the span. The axis runs from the start
   // of the first period to the end of the current one, the same on all charts.
-  const span = Date.parse(today) - Date.parse(from);
+  const span = Date.parse(end) - Date.parse(from);
   const unit = span > 183 * DAY ? 'month' : span > 62 * DAY ? 'week' : 'day';
   const xMin = period(from, unit).start;
-  const xMax = period(today, unit).end;
+  const xMax = period(end, unit).end;
 
-  const runs = useMemo(() => all.runs.filter((w) => w.date >= from), [all, from]);
-  const vo2 = useMemo(() => all.vo2.filter((v) => v.date >= from), [all, from]);
+  const runs = useMemo(() => all.runs.filter((w) => w.date >= from && w.date <= end), [all, from, end]);
+  const vo2 = useMemo(() => all.vo2.filter((v) => v.date >= from && v.date <= end), [all, from, end]);
+  const pickFrom = (v) => setCustom((c) => (v && c.to && v > c.to ? { from: c.to, to: v } : { ...c, from: v }));
+  const pickTo = (v) => setCustom((c) => (v && c.from && v < c.from ? { from: v, to: c.from } : { ...c, to: v }));
 
   const buckets = useMemo(() => {
     const map = new Map();
@@ -193,7 +202,7 @@ function RunningView({ database }) {
   // #endregion
 
   // #region Headline numbers
-  const latestVo2 = all.vo2[all.vo2.length - 1] || null;
+  const latestVo2 = vo2[vo2.length - 1] || null;
   const rating = latestVo2 ? vo2Rating(age, latestVo2.value) : null;
   const vo2Change = vo2.length > 1 ? vo2[vo2.length - 1].value - vo2[0].value : null;
   const miles = runs.reduce((s, w) => s + (w.distanceMi || 0), 0);
@@ -404,11 +413,18 @@ function RunningView({ database }) {
       <div className="range-bar">
         <div className="view-toggle">
           {RANGES.map((r) => (
-            <button key={r.id} className={range === r.id ? 'active' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
+            <button key={r.id} className={!isCustom && range === r.id ? 'active' : ''} onClick={() => { setRange(r.id); setCustom({ from: '', to: '' }); }}>{r.label}</button>
           ))}
         </div>
+        <div className="rv-dates">
+          <label>From</label>
+          <DateInput value={custom.from} min={firstDay} max={today} onChange={pickFrom} />
+          <label>To</label>
+          <DateInput value={custom.to} min={firstDay} max={today} onChange={pickTo} />
+          {isCustom && <button className="range-clear" onClick={() => setCustom({ from: '', to: '' })}>Clear</button>}
+        </div>
         <span className="range-info" title={all.meta.lastSync || ''}>
-          Since {longDay(firstDay)} · synced {ago(all.meta.lastSyncMs)}
+          {isCustom ? `${longDay(from)} to ${longDay(end)}` : `Since ${longDay(firstDay)}`} · synced {ago(all.meta.lastSyncMs)}
         </span>
       </div>
 
@@ -421,10 +437,10 @@ function RunningView({ database }) {
 
       <div className="bs-kpis rv-kpis">
         <div className="bs-kpi">
-          <div className="bs-kpi-label">VO2 max</div>
+          <div className="bs-kpi-label">VO2 max{latestVo2 && latestVo2.date !== today ? ` · ${longDay(latestVo2.date)}` : ''}</div>
           <div className="bs-kpi-value" style={rating ? { color: rating.color } : undefined}>{latestVo2 ? fmt(latestVo2.value, 2) : '—'}</div>
           <div className="bs-kpi-delta">
-            {rating ? `${rating.level}${rating.next ? ` · ${rating.next.level} at ${fmt(rating.next.at)}` : ''}` : 'no reading yet'}
+            {rating ? `${rating.level}${rating.next ? ` · ${rating.next.level} at ${fmt(rating.next.at)}` : ''}` : 'no reading in this range'}
           </div>
           {vo2Change !== null && <div className={`bs-kpi-delta ${vo2Change >= 0 ? 'good' : 'bad'}`}>{signed(vo2Change, 2)} in this range</div>}
         </div>

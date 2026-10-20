@@ -16,11 +16,12 @@ import './MeasurementsView.css';
 Chart.register(...registerables);
 
 // #region Body parts, proportions, formatting
-const UPPER = '#C58AF9', CORE = '#fcad70', ARMS = '#8ab4f8', LEGS = '#81c995';
+// Same colors as the workout chart's muscle groups; core has no group, so it borrows Calisthenics
+const DELTS = '#ffad3f', CHEST = '#f44336', CORE = '#b4a4da', ARMS = '#93c47d', UPPER_LEGS = '#6d9eeb', LOWER_LEGS = '#cadcfd';
 // Right side is the main value; the left is shown beside it when it was noted.
 const PARTS = [
-  { id: 'shoulder', label: 'Shoulders', color: UPPER, get: (e) => e.in?.shoulder },
-  { id: 'chest', label: 'Chest', color: UPPER, get: (e) => e.in?.chest },
+  { id: 'shoulder', label: 'Shoulders', color: DELTS, get: (e) => e.in?.shoulder },
+  { id: 'chest', label: 'Chest', color: CHEST, get: (e) => e.in?.chest },
   { id: 'belowRib', label: 'Below rib', color: CORE, get: (e) => e.in?.belowRib },
   { id: 'waist', label: 'Waist', color: CORE, get: (e) => e.in?.waist },
   { id: 'stomach', label: 'Stomach', note: 'belly button', color: CORE, get: (e) => e.in?.stomach },
@@ -29,8 +30,8 @@ const PARTS = [
   { id: 'bicepFlexed', label: 'Biceps flexed', color: ARMS, get: (e) => e.in?.bicepFlexedR },
   { id: 'forearm', label: 'Forearm', color: ARMS, get: (e) => e.in?.forearmR, left: (e) => e.in?.forearmL },
   { id: 'wrist', label: 'Wrist', color: ARMS, get: (e) => e.in?.wristR, left: (e) => e.in?.wristL },
-  { id: 'thigh', label: 'Thigh', color: LEGS, get: (e) => e.in?.thighR, left: (e) => e.in?.thighL },
-  { id: 'calf', label: 'Calf', color: LEGS, get: (e) => e.in?.calfR, left: (e) => e.in?.calfL },
+  { id: 'thigh', label: 'Thigh', color: UPPER_LEGS, get: (e) => e.in?.thighR, left: (e) => e.in?.thighL },
+  { id: 'calf', label: 'Calf', color: LOWER_LEGS, get: (e) => e.in?.calfR, left: (e) => e.in?.calfL },
 ];
 const ratio = (a, b) => (a && b ? a / b : null);
 const RATIOS = [

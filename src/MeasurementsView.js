@@ -20,16 +20,16 @@ Chart.register(...registerables);
 const DELTS = '#ffad3f', CHEST = '#f44336', CORE = '#b4a4da', ARMS = '#93c47d', UPPER_LEGS = '#6d9eeb', LOWER_LEGS = '#cadcfd';
 // Right side is the main value; the left is shown beside it when it was noted.
 const PARTS = [
-  { id: 'shoulder', label: 'Shoulders', color: DELTS, get: (e) => e.in?.shoulder },
-  { id: 'chest', label: 'Chest', color: CHEST, get: (e) => e.in?.chest },
-  { id: 'stomach', label: 'Stomach', note: 'belly button', color: CORE, get: (e) => e.in?.stomach },
-  { id: 'hips', label: 'Hips', color: CORE, get: (e) => e.in?.hips },
-  { id: 'bicep', label: 'Biceps', color: ARMS, get: (e) => e.in?.bicepR, left: (e) => e.in?.bicepL },
-  { id: 'bicepFlexed', label: 'Biceps flexed', color: ARMS, get: (e) => e.in?.bicepFlexedR },
-  { id: 'forearm', label: 'Forearm', color: ARMS, get: (e) => e.in?.forearmR, left: (e) => e.in?.forearmL },
-  { id: 'wrist', label: 'Wrist', color: ARMS, get: (e) => e.in?.wristR, left: (e) => e.in?.wristL },
-  { id: 'thigh', label: 'Thigh', color: UPPER_LEGS, get: (e) => e.in?.thighR, left: (e) => e.in?.thighL },
-  { id: 'calf', label: 'Calf', color: LOWER_LEGS, get: (e) => e.in?.calfR, left: (e) => e.in?.calfL },
+  { id: 'shoulder', site: 'shoulder', label: 'Shoulders', color: DELTS, get: (e) => e.in?.shoulder },
+  { id: 'chest', site: 'chest', label: 'Chest', color: CHEST, get: (e) => e.in?.chest },
+  { id: 'stomach', site: 'stomach', label: 'Stomach', note: 'belly button', color: CORE, get: (e) => e.in?.stomach },
+  { id: 'hips', site: 'hips', label: 'Hips', color: CORE, get: (e) => e.in?.hips },
+  { id: 'bicep', site: 'bicepR', label: 'Biceps', color: ARMS, get: (e) => e.in?.bicepR, left: (e) => e.in?.bicepL },
+  { id: 'bicepFlexed', site: 'bicepFlexedR', label: 'Biceps flexed', color: ARMS, get: (e) => e.in?.bicepFlexedR },
+  { id: 'forearm', site: 'forearmR', label: 'Forearm', color: ARMS, get: (e) => e.in?.forearmR, left: (e) => e.in?.forearmL },
+  { id: 'wrist', site: 'wristR', label: 'Wrist', color: ARMS, get: (e) => e.in?.wristR, left: (e) => e.in?.wristL },
+  { id: 'thigh', site: 'thighR', label: 'Thigh', color: UPPER_LEGS, get: (e) => e.in?.thighR, left: (e) => e.in?.thighL },
+  { id: 'calf', site: 'calfR', label: 'Calf', color: LOWER_LEGS, get: (e) => e.in?.calfR, left: (e) => e.in?.calfL },
 ];
 const ratio = (a, b) => (a && b ? a / b : null);
 const RATIOS = [
@@ -75,7 +75,7 @@ function bpCategory(sys, dia) {
 // #endregion
 
 // #region One small trend per measure
-function TrendCard({ title, note, color, entries, get, left, show, unit, range }) {
+function TrendCard({ title, note, how, color, entries, get, left, show, unit, range }) {
   const pts = entries.map((e) => ({ e, v: get(e) })).filter((p) => has(p.v));
   const canvas = useRef(null);
   useChart(canvas, () => {
@@ -134,7 +134,7 @@ function TrendCard({ title, note, color, entries, get, left, show, unit, range }
   const fmtD = unit ? deltaInch : deltaNum;
   return (
     <div className="ms-card">
-      <div className="ms-card-head">
+      <div className="ms-card-head" title={how || ''}>
         <span className="ms-card-title" style={{ color }}>{title}</span>
         {note && <span className="ms-card-note">{note}</span>}
       </div>
@@ -162,7 +162,7 @@ function TrendCard({ title, note, color, entries, get, left, show, unit, range }
 
 function MeasurementsView({ database }) {
   const isMobile = useIsMobile();
-  const { entries, loaded, error } = useBodyMeasurements(database);
+  const { entries, guide, loaded, error } = useBodyMeasurements(database);
 
   // Every trend shares one time axis, padded a few months each side
   const range = entries.length
@@ -277,7 +277,10 @@ function MeasurementsView({ database }) {
 
       <div className="ms-grid">
         {PARTS.map((p) => (
-          <TrendCard key={p.id} title={p.label} note={p.note} color={p.color} entries={entries} get={p.get} left={p.left} show={inch} unit=" in" range={range} />
+          <TrendCard
+            key={p.id} title={p.label} color={p.color} entries={entries} get={p.get} left={p.left} show={inch} unit=" in" range={range}
+            note={guide?.sites?.[p.site]?.short || p.note} how={guide?.sites?.[p.site]?.how}
+          />
         ))}
         {RATIOS.map((p) => (
           <TrendCard key={p.id} title={p.label} note={p.note} color={p.color} entries={entries} get={p.get} show={num2} unit="" range={range} />

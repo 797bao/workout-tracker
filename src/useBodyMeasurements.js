@@ -3,41 +3,51 @@ import { ref, onValue } from 'firebase/database';
 
 // /bodyMeasurements/<YYYY-MM-DD> holds Bao's hand-written check-ins:
 //   { date, weightLbs, bp: { sys, dia, pulse? }, tape?: 'Oiyaku' | 'Myo-body',
-//     in: { shoulder, chest, belowRib, waist, stomach, hips, bicepR, bicepL,
-//           bicepFlexedR, forearmR, forearmL, wristR, wristL, thighR, thighL,
-//           calfR, calfL }, notes? }   (inches, unflexed unless "Flexed")
-// Tiny, so one app-lifetime listener with a module cache, shared by every mount.
+//     tapeOffsetIn?, in: { shoulder, chest, stomach, hips, bicepR, bicepL,
+//     bicepFlexedR, forearmR, forearmL, wristR, wristL, thighR, thighL, calfR,
+//     calfL, ... }, notes? }   (inches, unflexed unless "Flexed")
+// /bodyMeasurementsGuide says how each site is measured:
+//   { conventions: [...], tapes: { <tape>: { offsetIn, note } },
+//     sites: { <key>: { label, short, how } } }
+// Both are tiny, so one app-lifetime listener each with a module cache, shared by every mount.
 
 // Both soft tapes Bao uses from May 2025 on read about 0.3 in higher than a
 // regular ruler. Values are stored as measured; this hook hands out the
 // ruler-equivalent. An entry's own tapeOffsetIn wins over the per-tape default.
 export const TAPE_OFFSET_IN = { 'Myo-body': -0.3, Oiyaku: -0.3 };
 
-let cache = null;
+let cache = { data: null, guide: null };
 const subscribers = new Set();
 let listening = false;
 
-function publish(value) {
-  cache = value;
-  for (const cb of subscribers) cb(value);
+function publish(patch) {
+  cache = { ...cache, ...patch };
+  for (const cb of subscribers) cb(cache);
 }
 
-/** Returns { entries: [...] oldest first (in = ruler-equivalent, rawIn = as measured, offsetIn), loaded, error }. */
+/**
+ * Returns { entries: [...] oldest first (in = ruler-equivalent, rawIn = as
+ * measured, offsetIn), guide, loaded, error }.
+ */
 export function useBodyMeasurements(database) {
-  const [data, setData] = useState(() => cache);
+  const [state, setState] = useState(() => cache);
 
   useEffect(() => {
-    setData(cache);
-    subscribers.add(setData);
+    setState(cache);
+    subscribers.add(setState);
     if (!listening) {
       listening = true;
       onValue(ref(database, 'bodyMeasurements'),
-        (snap) => publish(snap.val() || {}),
-        (err) => publish({ __error: err.message }));
+        (snap) => publish({ data: snap.val() || {} }),
+        (err) => publish({ data: { __error: err.message } }));
+      onValue(ref(database, 'bodyMeasurementsGuide'),
+        (snap) => publish({ guide: snap.val() || null }),
+        () => publish({ guide: null }));
     }
-    return () => { subscribers.delete(setData); };
+    return () => { subscribers.delete(setState); };
   }, [database]);
 
+  const data = state.data;
   const entries = useMemo(
     () => Object.entries(data || {}).filter(([k]) => k !== '__error').sort(([a], [b]) => a.localeCompare(b))
       .map(([date, e]) => {
@@ -49,5 +59,5 @@ export function useBodyMeasurements(database) {
       }),
     [data]
   );
-  return { entries, loaded: data !== null, error: data?.__error || null };
+  return { entries, guide: state.guide, loaded: data !== null, error: data?.__error || null };
 }

@@ -9,7 +9,8 @@ import React, { useMemo, useState } from 'react';
 const WIDTH = { shoulder: 2.75, chest: 3.0, stomach: 3.1, hips: 2.85, thigh: 3.4, calf: Math.PI, bicep: Math.PI, forearm: Math.PI, wrist: Math.PI };
 const DEFAULTS = { shoulder: 47, chest: 40, stomach: 34, hips: 39, thigh: 23, calf: 15.5, bicep: 13, forearm: 11.5, wrist: 7 };
 // Where each tape goes, top to bottom (inches below the top of the head)
-const Y = { shoulder: 14.6, chest: 17.6, bicep: 19, stomach: 26.5, forearm: 28.5, hips: 32.5, wrist: 34.6, thigh: 40, calf: 56 };
+// Biceps at the biceps peak (a bit lower than the triceps peak); forearm ~1.5 in below the elbow (~24.8)
+const Y = { shoulder: 14.6, chest: 17.6, bicep: 20.3, stomach: 26.5, forearm: 26.6, hips: 32.5, wrist: 34.6, thigh: 40, calf: 56 };
 
 /** Closed Catmull-Rom spline through points -> smooth SVG path. */
 function smoothPath(pts) {
@@ -103,10 +104,13 @@ function shapeValue(entries, idx, part) {
 const shapeOf = (entries, idx) => Object.fromEntries(Object.keys(WIDTH).map((p) => [p, shapeValue(entries, idx, p)]));
 // #endregion
 
-/** Spread label rows so two callouts never overlap. */
-function spread(items, gap) {
+/** Spread label rows so two callouts never overlap; each item says how tall it is (h). */
+function spread(items) {
   const out = items.map((it) => ({ ...it }));
-  for (let i = 1; i < out.length; i++) if (out[i].ly - out[i - 1].ly < gap) out[i].ly = out[i - 1].ly + gap;
+  for (let i = 1; i < out.length; i++) {
+    const min = out[i - 1].ly + out[i - 1].h;
+    if (out[i].ly < min) out[i].ly = min;
+  }
   return out;
 }
 
@@ -126,10 +130,11 @@ export default function BodyFigure({ entries, show, delta, longDate }) {
     const d = v !== undefined && was !== undefined ? v - was : null;
     const good = d === null || Math.abs(d) < 1e-9 ? null : SHRINK_IS_GOOD.has(part) ? d < 0 : d > 0;
     const [x1, x2, y] = fig.bands[part];
-    return { part, v, d, good, y, ly: y, ax: side < 0 ? x1 : x2, side };
+    const extraLine = part === 'bicep' && cur.in?.bicepFlexedR; // "flexed …" under the biceps value
+    return { part, v, d, good, y, ly: y, h: extraLine ? 7.8 : 5.6, ax: side < 0 ? x1 : x2, side };
   };
-  const right = spread(RIGHT_COLUMN.map((p) => callout(p, 1)).filter(Boolean), 5.6);
-  const left = spread(LEFT_COLUMN.map((p) => callout(p, -1)).filter(Boolean), 5.6);
+  const right = spread(RIGHT_COLUMN.map((p) => callout(p, 1)).filter(Boolean));
+  const left = spread(LEFT_COLUMN.map((p) => callout(p, -1)).filter(Boolean));
   const flexed = cur.in?.bicepFlexedR;
 
   const LX = 34, LINE = 18.5;

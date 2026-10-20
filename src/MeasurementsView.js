@@ -22,8 +22,6 @@ const DELTS = '#ffad3f', CHEST = '#f44336', CORE = '#b4a4da', ARMS = '#93c47d', 
 const PARTS = [
   { id: 'shoulder', label: 'Shoulders', color: DELTS, get: (e) => e.in?.shoulder },
   { id: 'chest', label: 'Chest', color: CHEST, get: (e) => e.in?.chest },
-  { id: 'belowRib', label: 'Below rib', color: CORE, get: (e) => e.in?.belowRib },
-  { id: 'waist', label: 'Waist', color: CORE, get: (e) => e.in?.waist },
   { id: 'stomach', label: 'Stomach', note: 'belly button', color: CORE, get: (e) => e.in?.stomach },
   { id: 'hips', label: 'Hips', color: CORE, get: (e) => e.in?.hips },
   { id: 'bicep', label: 'Biceps', color: ARMS, get: (e) => e.in?.bicepR, left: (e) => e.in?.bicepL },

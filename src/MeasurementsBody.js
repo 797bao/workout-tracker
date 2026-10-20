@@ -9,7 +9,7 @@ import React, { useMemo, useState } from 'react';
 const WIDTH = { shoulder: 2.75, chest: 3.0, stomach: 3.1, hips: 2.85, thigh: 3.4, calf: Math.PI, bicep: Math.PI, forearm: Math.PI, wrist: Math.PI };
 const DEFAULTS = { shoulder: 47, chest: 40, stomach: 34, hips: 39, thigh: 23, calf: 15.5, bicep: 13, forearm: 11.5, wrist: 7 };
 // Where each tape goes, top to bottom (inches below the top of the head)
-const Y = { shoulder: 14.6, chest: 17.6, bicep: 19, waist: 23.5, stomach: 26.5, forearm: 28.5, hips: 32.5, wrist: 34.6, thigh: 40, calf: 56 };
+const Y = { shoulder: 14.6, chest: 17.6, bicep: 19, stomach: 26.5, forearm: 28.5, hips: 32.5, wrist: 34.6, thigh: 40, calf: 56 };
 
 /** Closed Catmull-Rom spline through points -> smooth SVG path. */
 function smoothPath(pts) {
@@ -62,7 +62,6 @@ function figure(m) {
   const bands = {
     shoulder: [-delts, delts, Y.shoulder],
     chest: [-ch, ch, Y.chest],
-    waist: [-(ch + st) / 2, (ch + st) / 2, Y.waist],
     stomach: [-st, st, Y.stomach],
     hips: [-hp, hp, Y.hips],
     thigh: [-legX - th, -legX + th, Y.thigh],
@@ -76,14 +75,14 @@ function figure(m) {
 // #endregion
 
 // #region Values
-const KEYS = { shoulder: 'shoulder', chest: 'chest', waist: 'waist', stomach: 'stomach', hips: 'hips', bicep: 'bicepR', forearm: 'forearmR', wrist: 'wristR', thigh: 'thighR', calf: 'calfR' };
-const LABELS = { shoulder: 'Shoulders', chest: 'Chest', waist: 'Waist', stomach: 'Stomach', hips: 'Hips', bicep: 'Biceps', forearm: 'Forearm', wrist: 'Wrist', thigh: 'Thigh', calf: 'Calf' };
+const KEYS = { shoulder: 'shoulder', chest: 'chest', stomach: 'stomach', hips: 'hips', bicep: 'bicepR', forearm: 'forearmR', wrist: 'wristR', thigh: 'thighR', calf: 'calfR' };
+const LABELS = { shoulder: 'Shoulders', chest: 'Chest', stomach: 'Stomach', hips: 'Hips', bicep: 'Biceps', forearm: 'Forearm', wrist: 'Wrist', thigh: 'Thigh', calf: 'Calf' };
 // Same colors as the workout chart's muscle groups (Delts, Chest, Arms, Upper / Lower Legs); core uses Calisthenics
-const COLORS = { shoulder: '#ffad3f', chest: '#f44336', waist: '#b4a4da', stomach: '#b4a4da', hips: '#b4a4da', bicep: '#93c47d', forearm: '#93c47d', wrist: '#93c47d', thigh: '#6d9eeb', calf: '#cadcfd' };
+const COLORS = { shoulder: '#ffad3f', chest: '#f44336', stomach: '#b4a4da', hips: '#b4a4da', bicep: '#93c47d', forearm: '#93c47d', wrist: '#93c47d', thigh: '#6d9eeb', calf: '#cadcfd' };
 // Torso callouts sit on the figure's left (viewer's right); the measured right limbs on the other side
-const RIGHT_COLUMN = ['shoulder', 'chest', 'waist', 'stomach', 'hips'];
+const RIGHT_COLUMN = ['shoulder', 'chest', 'stomach', 'hips'];
 const LEFT_COLUMN = ['bicep', 'forearm', 'wrist', 'thigh', 'calf'];
-const SHRINK_IS_GOOD = new Set(['waist', 'stomach', 'hips']);
+const SHRINK_IS_GOOD = new Set(['stomach', 'hips']);
 const lbs = (d) => (Math.abs(d) < 0.05 ? '±0' : (d > 0 ? '+' : '−') + Math.abs(Math.round(d * 10) / 10));
 
 /** Measure value for shape: this check-in's, else the nearest check-in that has it, else a default. */
@@ -123,7 +122,6 @@ export default function BodyFigure({ entries, show, delta, longDate }) {
 
   const callout = (part, side) => {
     const v = cur.in?.[KEYS[part]];
-    if (part === 'waist' && v === undefined) return null; // only measured in 2019
     const was = cmp?.in?.[KEYS[part]];
     const d = v !== undefined && was !== undefined ? v - was : null;
     const good = d === null || Math.abs(d) < 1e-9 ? null : SHRINK_IS_GOOD.has(part) ? d < 0 : d > 0;
@@ -208,9 +206,9 @@ export default function BodyFigure({ entries, show, delta, longDate }) {
           </g>
         )}
         <g className="mb-bands">
-          {Object.entries(fig.bands).map(([part, [x1, x2, y]]) => (part === 'waist' && cur.in?.waist === undefined ? null : (
+          {Object.entries(fig.bands).map(([part, [x1, x2, y]]) => (
             <line key={part} x1={x1} x2={x2} y1={y} y2={y} stroke={COLORS[part]} />
-          )))}
+          ))}
         </g>
         {right.map(label)}
         {left.map(label)}

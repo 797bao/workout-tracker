@@ -12,6 +12,7 @@ import { set } from 'date-fns';
 import Stats from './Stats';
 import BodyStatsView from './BodyStatsView';
 import RunningView from './RunningView';
+import MeasurementsView from './MeasurementsView';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -46,6 +47,7 @@ const SIDE_PAGES = [
     { id: 'stats', icon: '★', label: 'Stats' },
     { id: 'body', icon: '◐', label: 'Body Stats' },
     { id: 'running', icon: '♥', label: 'Running' },
+    { id: 'measurements', icon: '◇', label: 'Measures' },
 ];
 
 let today = new Date();
@@ -105,7 +107,7 @@ const DateSidebar = ({ dateRange, setDateRange, isOpen, onClose, page, setPage }
 
     return (
         <div className={`date-sidebar ${isOpen ? 'drawer-open' : ''}`}>
-            {/* Stats, Body Stats and Running pages — sit above the year list */}
+            {/* Stats, Body Stats, Running and Measures pages — sit above the year list */}
             <div className="stats-nav-group">
                 {SIDE_PAGES.map(p => (
                     <div
@@ -168,7 +170,7 @@ const WorkoutChart = () => {
     const [yAxisLabels, setYAxisLabels] = useState([]);
 
     // State variables
-    const [page, setPage] = useState('chart'); // 'chart' | 'stats' | 'body' | 'running'
+    const [page, setPage] = useState('chart'); // 'chart' | 'stats' | 'body' | 'running' | 'measurements'
     const [mode, setMode] = useState('strength'); // 'strength' | 'cardio' | 'weight' | 'calories'
 
     // Strength <-> cardio share the left toggle (and Tab). Weight and Calories
@@ -2655,6 +2657,8 @@ const WorkoutChart = () => {
                 <BodyStatsView database={database} canWrite={canWriteGoal} />
             ) : page === 'running' ? (
                 <RunningView database={database} />
+            ) : page === 'measurements' ? (
+                <MeasurementsView database={database} />
             ) : (
             <>
             <div className="mobile-controls-row">

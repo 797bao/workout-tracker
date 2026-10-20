@@ -313,7 +313,7 @@
 .stats-nav-icon { font-size: 13px; width: 14px; text-align: center; flex-shrink: 0; }
 
 .stats-nav-group { margin: 4px 0 10px; }
-.stats-nav-group .stats-nav-item { margin: 2px 6px; white-space: nowrap; }
+.stats-nav-group .stats-nav-item { margin: 2px 6px; padding: 7px 8px; gap: 6px; line-height: 1.2; }
 
 /* ── Mobile ── */
 @media (max-width: 820px) {
